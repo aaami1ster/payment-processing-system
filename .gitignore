@@ -1,0 +1,83 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Gradle (if used later)
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+*.hprof
+
+# Spring Boot
+*.log
+logs/
+spring-boot-devtools.properties
+
+# Coverage / reports
+jacoco.exec
+coverage/
+.nyc_output/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.jks
+application-local.yml
+application-local.yaml
+application-local.properties
+
+# Docker
+docker-compose.override.yml
+*.pid
+
+# IDE — IntelliJ / Cursor
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# IDE — Eclipse
+.classpath
+.project
+.settings/
+.bin/
+
+# IDE — VS Code
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Test / local data
+*.db
+*.sqlite
+data/
+tmp/
+temp/
