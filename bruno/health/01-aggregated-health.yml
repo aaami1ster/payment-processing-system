@@ -6,7 +6,6 @@ info:
 http:
   method: GET
   url: "{{baseUrl}}/actuator/health"
-  auth: none
 
 runtime:
   scripts:

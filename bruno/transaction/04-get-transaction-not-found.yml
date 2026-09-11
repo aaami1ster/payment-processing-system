@@ -6,7 +6,6 @@ info:
 http:
   method: GET
   url: "{{baseUrl}}/api/v1/transactions/00000000-0000-0000-0000-000000000000"
-  auth: none
 
 runtime:
   scripts:

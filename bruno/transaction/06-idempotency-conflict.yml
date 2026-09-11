@@ -18,7 +18,6 @@ http:
         "merchantId": "{{merchantId}}",
         "category": "ELECTRONICS"
       }
-  auth: none
 
 runtime:
   scripts:

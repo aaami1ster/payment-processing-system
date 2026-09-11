@@ -13,7 +13,6 @@ http:
         "kycStatus": "VERIFIED",
         "preApprovedTransactionLimit": 15000
       }
-  auth: none
 
 runtime:
   scripts:

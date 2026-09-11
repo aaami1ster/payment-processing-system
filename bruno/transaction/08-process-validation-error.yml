@@ -15,7 +15,6 @@ http:
         "merchantId": "{{merchantId}}",
         "category": "GROCERY"
       }
-  auth: none
 
 runtime:
   scripts:

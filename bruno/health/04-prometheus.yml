@@ -9,7 +9,6 @@ http:
   headers:
     - name: Accept
       value: text/plain
-  auth: none
 
 runtime:
   scripts:

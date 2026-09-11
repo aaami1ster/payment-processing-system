@@ -5,7 +5,9 @@ Manual / CLI API tests for every HTTP surface defined in the design.
 ## Prerequisites
 
 - App running: `docker compose up --build -d`
-- [Bruno](https://www.usebruno.com/) ≥ 3.0 (YAML / OpenCollection), or `@usebruno/cli`
+- One of:
+  - [Bruno desktop](https://www.usebruno.com/) ≥ 3.0 (YAML / OpenCollection), or
+  - Node.js 20+ (provides `npx`) for `@usebruno/cli`
 
 ## Open in Bruno
 
@@ -14,12 +16,31 @@ Manual / CLI API tests for every HTTP surface defined in the design.
 
 ## CLI
 
+Requires Node/`npx`. If `npx: command not found`, install Node 20+ (e.g. `brew install node`) or use the desktop app / curl below.
+
 ```bash
 cd bruno
 npx @usebruno/cli run --env Local
 npx @usebruno/cli run health --env Local
 npx @usebruno/cli run user --env Local
 npx @usebruno/cli run transaction --env Local
+```
+
+Or run CLI via Docker (no local Node):
+
+```bash
+docker run --rm -v "$PWD/bruno:/collection" -w /collection --network host \
+  node:20-alpine sh -c "npm i -g @usebruno/cli && bru run --env Local"
+```
+
+## Phase 0 health without Bruno
+
+```bash
+curl -s http://localhost:8080/actuator/health
+curl -s http://localhost:8080/actuator/health/liveness
+curl -s http://localhost:8080/actuator/health/readiness
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/actuator/prometheus
+# expect UP / UP / UP / 200
 ```
 
 ## Folders

@@ -6,7 +6,6 @@ info:
 http:
   method: GET
   url: "{{baseUrl}}/api/v1/users/{{userId}}"
-  auth: none
 
 runtime:
   scripts:
