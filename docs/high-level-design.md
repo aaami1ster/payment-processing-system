@@ -591,8 +591,8 @@ flowchart LR
 flowchart LR
     subgraph Compose["docker-compose (MVP)"]
         App["payment-service :8080"]
-        PG["postgres:18-alpine :5432"]
-        MG["mongo:8 :27017"]
+        PG["postgres :5432"]
+        MG["mongo :27017"]
     end
     RedisOpt[("Redis<br/>optional")]
     App --> PG
@@ -602,8 +602,7 @@ flowchart LR
 
 
 
-- One `docker-compose.yml`: app, **PostgreSQL 18**, **MongoDB 8**.
-- Postgres volume mounts `/var/lib/postgresql` (PG 18+ image layout). Major-version bumps need a fresh volume (`docker compose down -v`) or a proper `pg_upgrade` / dump-restore.
+- One `docker-compose.yml`: app, PostgreSQL, MongoDB.
 - App waits for PG via healthchecks, then **Liquibase** migrations, then starts.
 - Outbox publisher is a `@Scheduled` worker **inside** the app (safe across instances via `SKIP LOCKED`).
 - Optional Redis (query cache / shared rate-limit buckets) is a later compose service — not required for MVP.
