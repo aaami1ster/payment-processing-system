@@ -2,7 +2,7 @@
 
 > **Docs index:** [README.md](README.md) · [requirements-and-assumptions.md](requirements-and-assumptions.md) · [high-level-design.md](high-level-design.md) · [low-level-design.md](low-level-design.md)
 
-This document covers fraud rules, domain and data models, API contracts, concurrency/idempotency details, observability, testing, and implementation sequence.
+This document covers fraud rules, domain and data models, API contracts, concurrency/idempotency details, observability, testing, implementation sequence, and optional enhancement contracts.
 
 See [high-level-design.md](high-level-design.md) for architecture and trade-offs, and [requirements-and-assumptions.md](requirements-and-assumptions.md) for goals and assumptions.
 
@@ -542,6 +542,8 @@ Infrastructure error example:
 
 `GET /api/v1/transactions/{id}` — fetch a stored decision (useful for idempotent clients and ops). HTTP `200` + envelope with transaction in `data`, or `404` + `NOT_FOUND`.
 
+Optional list/export: `GET /api/v1/transactions` with filters and cursor pagination — see [Bulk transaction export](#4-bulk-transaction-export-with-pagination).
+
 ### Infrastructure failure vs business decline
 
 **Business decline**
@@ -775,4 +777,276 @@ Aligned with the challenge’s suggested order:
 7. Integration tests (Testcontainers), JaCoCo, README (include the core guarantee and Mongo justification).
 
 This order keeps the fraud policy correct before HTTP and storage adapters accumulate around it.
+
+---
+
+## Optional Enhancements (contracts & details)
+
+Additive designs for the challenge’s optional list. **Idempotency is already specified above** and is treated as core. The rest are not required for MVP. Architecture fit: [high-level-design.md](high-level-design.md); status table: [requirements-and-assumptions.md](requirements-and-assumptions.md).
+
+### 1. Idempotency keys (core — see above)
+
+Already covered under [API Design → Idempotency](#idempotency) and [Concurrency, Idempotency, and Time](#concurrency-idempotency-and-time):
+
+- Header: optional `Idempotency-Key`
+- Fingerprint: `SHA-256(canonical(userId, merchantId, amount, category))`
+- Storage: `transactions.idempotency_key` + `request_fingerprint`
+- Invariant: partial unique index on `(user_id, idempotency_key)`
+- Conflict: same key + different fingerprint → `409` + `IDEMPOTENCY_CONFLICT`
+
+No additional schema or endpoints are required for this enhancement.
+
+### 2. Webhook / notification system
+
+**Goal:** Push transaction events to subscriber URLs after a durable decision, without blocking the authorize response.
+
+#### Subscription model (optional table or config)
+
+| Field | Type | Notes |
+| ----- | ---- | ----- |
+| `id` | UUID | |
+| `merchant_id` | TEXT | Scope delivery (or `*` for global/ops) |
+| `target_url` | TEXT | HTTPS endpoint |
+| `secret` | TEXT | HMAC signing key |
+| `events` | TEXT[] | e.g. `TRANSACTION_APPROVED`, `TRANSACTION_FLAGGED`, `TRANSACTION_DECLINED` |
+| `active` | BOOLEAN | |
+| `created_at` | TIMESTAMPTZ | |
+
+MVP alternative: static YAML/`application.yml` subscribers — no CRUD API required.
+
+#### Outbox extension
+
+Extend `audit_outbox` (or introduce a parallel `notification_outbox`) with a destination:
+
+| Column | Notes |
+| ------ | ----- |
+| `destination` | `AUDIT` \| `WEBHOOK` |
+| `payload` | JSONB — for `WEBHOOK`, the HTTP body to POST |
+| `status` / `attempts` / `next_attempt_at` | Same retry semantics as today |
+
+On payment commit, insert:
+
+1. One `AUDIT` row (Mongo projection) — **always** (MVP).
+2. Zero or more `WEBHOOK` rows — one per matching active subscription (optional).
+
+Publisher claim query remains `FOR UPDATE SKIP LOCKED`, filtered by `status = PENDING` and `next_attempt_at <= now()`. Branch by `destination`.
+
+#### Delivery sequence
+
+```text
+1. Claim PENDING WEBHOOK outbox row
+2. POST payload to target_url
+   Headers:
+     Content-Type: application/json
+     X-Request-Id: <id>
+     X-Signature: sha256=<HMAC-SHA256(secret, rawBody)>
+3. 2xx → mark PUBLISHED
+4. 5xx / timeout → attempts++, schedule next_attempt_at (exponential backoff)
+5. 4xx (except 429) → retain + alert (poison); do not silent-drop
+```
+
+#### Example webhook payload
+
+```json
+{
+  "event": "TRANSACTION_FLAGGED",
+  "transactionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "userId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "merchantId": "mch_9f2",
+  "status": "FLAGGED",
+  "amount": "6200.00",
+  "category": "ELECTRONICS",
+  "rulesTriggered": ["NEW_USER_HIGH_AMOUNT"],
+  "createdAt": "2026-09-10T16:01:02Z"
+}
+```
+
+Subscribers must treat delivery as **at-least-once** and dedupe on `transactionId` (+ `event`).
+
+#### Package touchpoints
+
+- `integration.webhook.WebhookClient` — HTTP + HMAC
+- `data.outbox.OutboxPublisher` — destination switch
+- No change to `FraudEngine` or authorize HTTP latency budget
+
+### 3. Rate limiting per user or merchant
+
+**Goal:** Cap request rate before handlers run. Distinct from Rule 2 (fraud velocity on successful authorizations).
+
+#### Placement
+
+```text
+HTTP request
+  → RateLimitFilter (or gateway)
+  → Controller
+  → Command / Query handler
+```
+
+#### Suggested defaults (configurable)
+
+| Key | Limit | Window |
+| --- | ----- | ------ |
+| `userId` (from body/path when present) | 60 requests | 1 minute |
+| `merchantId` (from body when present) | 300 requests | 1 minute |
+| IP (fallback for routes without ids) | 120 requests | 1 minute |
+
+Implementation sketch: Bucket4j (in-process for single instance; Redis-backed buckets if multi-instance).
+
+#### API response when limited
+
+HTTP `429 Too Many Requests` with the standard envelope:
+
+```json
+{
+  "data": null,
+  "message": "Rate limit exceeded",
+  "errors": [
+    {
+      "code": "RATE_LIMIT_EXCEEDED",
+      "field": null,
+      "message": "Too many requests; retry later"
+    }
+  ],
+  "meta": {
+    "requestId": "req_abc123"
+  }
+}
+```
+
+Optional response header: `Retry-After: <seconds>`.
+
+#### Tests
+
+- Under limit → request reaches handler.
+- Over limit → `429` + `RATE_LIMIT_EXCEEDED`; no transaction insert, no outbox row.
+- Rule 2 still declines the 4th **successful** authorization even when rate limit allows the call through.
+
+### 4. Bulk transaction export with pagination
+
+**Goal:** List/export transactions for a user (and optional time range) without loading the full table.
+
+#### Endpoint
+
+`GET /api/v1/transactions`
+
+| Query param | Required | Notes |
+| ----------- | -------- | ----- |
+| `userId` | yes | Scope to one user |
+| `from` | no | Inclusive lower bound on `created_at` (ISO-8601) |
+| `to` | no | Inclusive upper bound on `created_at` |
+| `status` | no | `APPROVED` \| `FLAGGED` \| `DECLINED` |
+| `cursor` | no | Opaque; encode `(created_at, id)` of last row |
+| `limit` | no | Default 50, max 200 |
+
+#### Handler
+
+`ListTransactionsHandler` (query) — read-only; uses `idx_transaction_user_created` (and status variant when filtering).
+
+Cursor page (stable under inserts):
+
+```sql
+SELECT *
+FROM transactions
+WHERE user_id = :userId
+  AND created_at >= COALESCE(:from, '-infinity')
+  AND created_at <= COALESCE(:to, 'infinity')
+  AND (created_at, id) < (:cursorCreatedAt, :cursorId)  -- for DESC pages
+ORDER BY created_at DESC, id DESC
+LIMIT :limit;
+```
+
+#### Success response shape
+
+```json
+{
+  "data": {
+    "items": [ /* TransactionResponse… */ ],
+    "nextCursor": "eyJjcmVhdGVkQXQiOiIyMDI2LTA5LTEwVC4uLiIsImlkIjoiLi4uIn0",
+    "hasMore": true
+  },
+  "message": "Transactions listed",
+  "errors": [],
+  "meta": { "requestId": "req_abc123" }
+}
+```
+
+HTTP `200`. Empty page → `items: []`, `hasMore: false`, `nextCursor: null`.
+
+#### Audit export (optional companion)
+
+`GET /api/v1/audit-logs?userId=&from=&to=&cursor=` against Mongo `{ userId: 1, timestamp: -1 }` when consumers need rule detail / `userContext` snapshots. Same cursor pattern; eventually consistent with PG.
+
+### 5. Redis caching for user data or fraud rules
+
+**Goal:** Reduce PG load on hot reads. Authorize path unchanged.
+
+#### Keys and TTL
+
+| Key | Value | TTL | Written by | Invalidated by |
+| --- | ----- | --- | ---------- | -------------- |
+| `user:{id}` | serialized user view | e.g. 60s | `GetUserHandler` on miss | `UpdateUserHandler` (DEL); optional on create |
+| `fraud:config` | high-risk categories + thresholds snapshot | e.g. 30s | first read of `FraudProperties` / config adapter | deploy/config refresh; short TTL is enough |
+
+#### Rules
+
+```text
+GetUserHandler:
+  GET user:{id} → hit → return
+                → miss → PG → SET user:{id} EX 60 → return
+
+UpdateUserHandler:
+  PG update → DEL user:{id}
+
+ProcessTransactionHandler:
+  findByIdForUpdate only — never read or write Redis for the user row
+```
+
+Fraud **rule classes** remain in-process. Redis may cache **configuration**, not replace `FraudEngine`.
+
+#### Resilience
+
+- Redis down → queries fall through to PostgreSQL (degraded latency, still correct).
+- Readiness: Redis optional (like Mongo) — app stays READY if PG is up.
+- Tests: Testcontainers Redis only when the cache profile is enabled; core suite must pass without Redis.
+
+#### Compose (when enabled)
+
+Add `redis` service; Spring Data Redis / Lettuce with short timeouts and circuit breaker around cache get/set.
+
+### 6. SonarQube / static code analysis
+
+**Goal:** CI quality gate without runtime impact.
+
+#### Integration sketch
+
+```text
+mvn -B verify          # tests + JaCoCo (≥ 75%)
+mvn -B sonar:sonar     # CI only; SONAR_HOST_URL + token from secrets
+```
+
+| Check | Example gate |
+| ----- | ------------ |
+| Coverage | JaCoCo line ≥ 75% (align with challenge) |
+| Bugs / Vulnerabilities | 0 new blocker/critical |
+| Code smells | threshold per team preference |
+| Duplications | e.g. < 5% new code |
+
+Local alternative without a Sonar server: SpotBugs + PMD + Checkstyle Maven plugins on `verify`. Prefer one static-analysis path in CI docs so reviewers know how to run it.
+
+#### Non-impact
+
+- No Sonar container required in app `docker-compose`.
+- No production dependency.
+- Does not change API contracts or fraud semantics.
+
+### Suggested implementation order (if taken on)
+
+1. Idempotency — **done in core design**
+2. Rate limiting — small filter, high demo value
+3. Redis query cache — builds on CQRS-lite read path
+4. Bulk export — new query + cursor tests
+5. Webhooks — outbox destination + integration client
+6. SonarQube — CI wiring + README note
+
+---
 

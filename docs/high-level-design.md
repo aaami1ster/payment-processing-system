@@ -2,7 +2,7 @@
 
 > **Docs index:** [README.md](README.md) · [requirements-and-assumptions.md](requirements-and-assumptions.md) · [high-level-design.md](high-level-design.md) · [low-level-design.md](low-level-design.md)
 
-This document describes the overall architecture, packaging (CQRS-lite), request flow, key design decisions, resilience posture, and deployment topology.
+This document describes the overall architecture, packaging (CQRS-lite), request flow, key design decisions, resilience posture, deployment topology, and how optional enhancements plug in.
 
 See [requirements-and-assumptions.md](requirements-and-assumptions.md) for goals and assumptions, and [low-level-design.md](low-level-design.md) for schemas, API contracts, fraud rule details, testing, and build order.
 
@@ -31,11 +31,13 @@ flowchart TB
         Qry["Queries<br/>GetUser, GetTransaction"]
         Domain["Domain<br/>User, Transaction, FraudEngine + rules"]
         Data["Data layer<br/>Postgres, Mongo, outbox"]
-        Integ["Integration<br/>future external clients"]
+        Integ["Integration<br/>optional webhook clients"]
     end
 
     PG[("PostgreSQL<br/>users, transactions, outbox")]
     Mongo[("MongoDB<br/>audit logs")]
+    Redis[("Redis<br/>optional query cache")]
+    Webhook["Optional webhook<br/>subscribers"]
 
     Client --> API
     API --> Cmd
@@ -44,9 +46,13 @@ flowchart TB
     Cmd --> Data
     Cmd --> Integ
     Qry --> Data
+    Qry -.-> Redis
     Data --> PG
     Data --> Mongo
+    Integ -.-> Webhook
 ```
+
+Dashed edges are **optional enhancements** (Redis read cache, webhook delivery). The solid path is MVP.
 
 
 
@@ -62,11 +68,12 @@ flowchart TB
 | **Queries**             | Read-only use cases: fetch user/transaction views. No locks, no side effects. May later use cache/replica.                                      |
 | **Domain**              | Business concepts and policies (`User`, `Transaction`, `FraudEngine` / rules). No HTTP, JPA, or Mongo types.                                    |
 | **Data layer**          | Database-specific entities, repositories, and outbox publisher.                                                                                 |
-| **Integration**         | Outbound third-party clients (empty until needed; e.g. webhooks).                                                                               |
-| **PostgreSQL**          | Source of truth for users and transactions. Also holds the audit **outbox** so nothing is lost if Mongo is down.                                |
+| **Integration**         | Outbound third-party clients. Empty for MVP; optional webhook HTTP client when notifications are enabled.                                       |
+| **PostgreSQL**          | Source of truth for users and transactions. Also holds the **outbox** (audit today; optional webhook destinations later).                       |
 | **MongoDB**             | Query-optimized, append-only audit collection. Eventually consistent with PostgreSQL.                                                           |
-| **Outbox publisher**    | Background worker that ships committed outbox rows to Mongo and retries on failure (`FOR UPDATE SKIP LOCKED`).                                  |
-| **Resilience**          | Timeouts and circuit breakers around Mongo. PostgreSQL failures surface as `503`.                                                               |
+| **Outbox publisher**    | Background worker that ships committed outbox rows to Mongo and retries on failure (`FOR UPDATE SKIP LOCKED`). May later deliver webhook rows.  |
+| **Redis (optional)**    | Query-side cache only (`GetUserHandler`, optional fraud-config TTL). Never on the authorize / `FOR UPDATE` path.                                |
+| **Resilience**          | Timeouts and circuit breakers around Mongo (and optional Redis/webhooks). PostgreSQL failures surface as `503`.                                 |
 
 
 PostgreSQL is the **system of record**. MongoDB is an **audit projection**. A decision is durable as soon as the PostgreSQL transaction commits, even if Mongo is unavailable.
@@ -153,7 +160,7 @@ com.example.payment
 │       └── OutboxPublisher.java
 │
 ├── integration
-│   └── [future external clients]
+│   └── [optional webhook HTTP client]
 │
 ├── config
 │   ├── ClockConfig.java
@@ -166,6 +173,8 @@ com.example.payment
     │   └── LogFactory.java
     └── util
 ```
+
+Optional later packages (not required for MVP): `api.filter` (rate limiting), `data.redis` (query cache), additional query handlers for bulk export.
 
 ### Why this organization
 
@@ -195,6 +204,7 @@ User profile **writes** are rare; **reads** happen on every payment and on `GET 
 | `PATCH /api/v1/users/{id}` | `UpdateUserHandler` | Command |
 | `GET /api/v1/users/{id}` | `GetUserHandler` | Query |
 | `GET /api/v1/transactions/{id}` | `GetTransactionHandler` | Query |
+| `GET /api/v1/transactions` (optional) | `ListTransactionsHandler` | Query |
 
 **Rules:**
 
@@ -579,13 +589,15 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    subgraph Compose["docker-compose"]
+    subgraph Compose["docker-compose (MVP)"]
         App["payment-service :8080"]
         PG["postgres :5432"]
         MG["mongo :27017"]
     end
+    RedisOpt[("Redis<br/>optional")]
     App --> PG
     App --> MG
+    App -.-> RedisOpt
 ```
 
 
@@ -593,8 +605,123 @@ flowchart LR
 - One `docker-compose.yml`: app, PostgreSQL, MongoDB.
 - App waits for PG via healthchecks, then **Liquibase** migrations, then starts.
 - Outbox publisher is a `@Scheduled` worker **inside** the app (safe across instances via `SKIP LOCKED`).
+- Optional Redis (query cache / shared rate-limit buckets) is a later compose service — not required for MVP.
 
 **Out of scope for this challenge:** Kafka / Zookeeper / KRaft, Redis for velocity or distributed locks (optional read-through cache on `GetUserHandler` only is a later enhancement), microservices, Drools, event sourcing, separate fraud or audit services, separate read database for CQRS. PostgreSQL outbox + scheduled publisher is sufficient. Kafka could be introduced later for many downstream consumers; Redis on the authorize path would add consistency concerns without being necessary for Rule 2.
+
+---
+
+## Optional Enhancements (architecture)
+
+See [requirements-and-assumptions.md](requirements-and-assumptions.md) for status/intent/non-goals, and [low-level-design.md](low-level-design.md) for contracts. This section describes how each enhancement plugs into the architecture **without changing the core guarantee**.
+
+### Idempotency keys — already core
+
+Idempotency is part of the MVP authorize path (`Idempotency-Key`, fingerprint, unique partial index, double-check under the user lock). It is listed in the challenge’s optional section but is **already designed and required** in this system. See [Request Flow](#request-flow--process-transaction) and LLD Idempotency.
+
+### Webhook / notification system
+
+**Problem:** Merchants or internal systems need push notification when a transaction is decided, without polling.
+
+**Fit:** Reuse the transactional outbox. After `COMMIT`, durability already includes audit intent; the same pattern can enqueue a second outbox destination.
+
+```text
+POST /transactions
+       ↓
+PG transaction: insert txn + outbox(AUDIT) [+ optional outbox(WEBHOOK)]
+       ↓
+COMMIT → return 201
+       ↓
+Publisher (async):
+  AUDIT   → Mongo insert
+  WEBHOOK → HTTP POST to subscriber (HMAC-signed) with retry/backoff
+```
+
+| Concern | Choice |
+| ------- | ------ |
+| When to enqueue | Same PG transaction as the payment row — never after a lost response |
+| Delivery | At-least-once; subscriber must be idempotent (use `transactionId`) |
+| Failure | Outbox stays `PENDING`; exponential backoff; metrics/alerts — same as Mongo |
+| Client location | `integration` package (HTTP client + signing); publisher stays in `data/outbox` |
+| Sync on request path? | **No** — client never waits on webhook HTTP |
+
+Subscriptions (URL, secret, event filter) are configuration or a small Postgres table — not required for MVP.
+
+### Rate limiting (per user or merchant)
+
+**Problem:** Rule 2 protects fraud velocity; it does not stop a client from flooding `DECLINED` attempts or hammering reads.
+
+**Fit:** Cross-cutting HTTP filter (or API gateway) **before** command/query handlers. Example: Bucket4j token bucket keyed by `userId` and/or `merchantId` (and optionally IP for unauthenticated routes).
+
+```text
+Request → RateLimitFilter → Controller → Handler
+                ↓ over limit
+              429 Too Many Requests
+```
+
+- Independent of fraud: a rate-limited request never reaches `FraudEngine`.
+- Safe across instances if the bucket store is shared (Redis) or enforced at the gateway; in-process buckets are fine for a single-instance challenge demo.
+- Does **not** replace `SELECT … FOR UPDATE` or Rule 2.
+
+### Bulk transaction export with pagination
+
+**Problem:** Ops/clients need historical pulls, not one-id lookups.
+
+**Fit:** New CQRS-lite **query** handler — read-only against PostgreSQL (system of record). Cursor pagination keeps large exports stable under inserts.
+
+```text
+GET /api/v1/transactions?userId=&from=&to=&cursor=&limit=
+       ↓
+ListTransactionsHandler (query)
+       ↓
+PostgreSQL (idx_transaction_user_created)
+```
+
+- No locks, no outbox, no fraud evaluation.
+- Audit-oriented export can additionally query Mongo by `userId` + `timestamp` when the consumer wants rule detail / user snapshot history.
+- Authorize path unchanged.
+
+### Redis caching (user data / fraud rules)
+
+**Problem:** `GET /users/{id}` and fraud config reads are hot; authorize already hits PG under lock.
+
+**Fit:** Optional read-through cache on the **query** side only.
+
+```text
+GetUserHandler            → Redis get user:{id} → miss → PG → set TTL
+UpdateUserHandler         → PG write → DEL user:{id}
+ProcessTransactionHandler → userRepository.findByIdForUpdate()  // never Redis
+FraudProperties (optional)→ Redis get fraud:config → miss → config/DB → short TTL
+```
+
+| May use Redis | Must not use Redis |
+| ------------- | ------------------ |
+| `GetUserHandler` | Authorize-path user load |
+| Cached fraud category set / thresholds (TTL) | Velocity count / window |
+| Rate-limit buckets (if shared) | Distributed lock replacing `FOR UPDATE` |
+
+Fraud **rule classes** stay in-process Java; Redis may cache **config values**, not the rule engine itself.
+
+### SonarQube / static code analysis
+
+**Problem:** Catch smells, bugs, and coverage gaps continuously.
+
+**Fit:** CI-only — Maven Sonar scanner (or SpotBugs/PMD + JaCoCo already in-repo). Quality gate runs on PR/main; no container in `docker-compose`, no runtime bean.
+
+```text
+mvn verify → JaCoCo report → sonar:sonar (CI) → quality gate
+```
+
+Complements (does not replace) unit/integration tests and the ≥ 75% JaCoCo target.
+
+### What stays true with all enhancements enabled
+
+```text
+APPROVED / FLAGGED / DECLINED response
+        → still requires PostgreSQL COMMIT of transaction + audit outbox
+Webhooks / Mongo / Redis / rate limits
+        → never invent a business decision if PG is down
+```
 
 ---
 

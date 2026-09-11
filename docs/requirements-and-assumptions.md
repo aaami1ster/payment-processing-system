@@ -57,27 +57,24 @@ These are not specified in the brief; they are called out so behavior is determi
 | Idempotency            | Optional `Idempotency-Key` header. Same key + same request fingerprint → original result. Same key + different fingerprint → `409`.                   |
 | Declined HTTP status   | `DECLINED` returns `201 Created` with `ApiResponse.data.status = DECLINED` and empty `errors`. Business outcome is in `data`, not an API error. |
 
-
----
-
 ---
 
 ## Optional Enhancements (how they fit)
 
-Designed as additive; not required for the core path.
+Designed as additive; not required for the MVP path except where already adopted as core. Each item below states **status**, **intent**, **fit**, and **non-goals**. Architecture detail lives in [high-level-design.md](high-level-design.md); contracts and schemas in [low-level-design.md](low-level-design.md).
 
 
-| Enhancement      | Fit                                                                                                                                       |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Idempotency keys | Included in the core design (header + fingerprint + unique index).                                                                        |
-| Webhooks         | Outbox payload can grow a `WEBHOOK` destination; same publisher pattern.                                                                  |
-| Rate limiting    | HTTP-level (Bucket4j / gateway) **in addition to** Rule 2. Rule 2 is a fraud control, not a DoS shield.                                   |
-| Bulk export      | `GET /transactions?userId&from&to&cursor=` against PostgreSQL; audit export from Mongo.                                                   |
-| User cache       | Short-TTL cache of `User` by id is optional. **Do not** move velocity counts or locking to Redis — PG remains source of truth for Rule 2. |
-| SonarQube        | CI-only; no runtime impact.                                                                                                               |
+| Enhancement | Status | Intent | Fit | Non-goals |
+| ----------- | ------ | ------ | --- | --------- |
+| **Idempotency keys** | **Core** (already designed) | Prevent duplicate transactions on client retry | Optional `Idempotency-Key` header + request fingerprint + partial unique index on `(user_id, idempotency_key)` | Not a substitute for the Rule 2 user-row lock |
+| **Webhooks / notifications** | Optional | Notify merchants/ops of transaction events after a durable decision | Extend transactional outbox with a `WEBHOOK` destination; same publisher pattern as Mongo audit (`SKIP LOCKED`, retry/backoff); client under `integration` | No sync HTTP fan-out on the authorize path; no Kafka for this scope |
+| **Rate limiting** | Optional | Protect the API from abuse / burst traffic per user or merchant | HTTP filter or gateway (e.g. Bucket4j) **in addition to** Rule 2; returns `429` | Not a fraud rule — Rule 2 remains the velocity fraud control |
+| **Bulk transaction export** | Optional | Let clients/ops pull historical transactions with pagination | CQRS-lite query: `GET /transactions` with filters + cursor against PostgreSQL; audit export from Mongo if needed | Not on the authorize write path; no full-table dump without pagination |
+| **Redis caching** | Optional | Speed up read-heavy user profile (and optionally fraud config) lookups | Read-through cache on `GetUserHandler` (+ TTL for fraud properties); invalidate on `UpdateUserHandler` | **Never** cache the authorize-path user load; never move velocity counts or `FOR UPDATE` locking to Redis |
+| **SonarQube / static analysis** | Optional | Continuous code-quality gate in CI | Maven plugin / pipeline step; quality gate alongside JaCoCo | No runtime dependency; not part of `docker-compose` app topology |
 
 
----
+**Priority if implemented later:** idempotency (done) → rate limiting → Redis query cache → bulk export → webhooks → SonarQube.
 
 ---
 
