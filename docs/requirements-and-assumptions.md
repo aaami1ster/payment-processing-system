@@ -32,7 +32,7 @@ Persistence unavailable → no business decision acknowledged → 503 Service Un
 
 - Concurrent requests for the same user must not bypass velocity limits.
 - Downstream slowness or outage must not lose transaction data or audit intent.
-- Layered, testable Java (Spring Boot 4.x, Maven, JUnit 5, Testcontainers, JaCoCo ≥ 75%).
+- Layered, testable Java (Spring Boot 3.x, Maven, JUnit 5, Testcontainers, JaCoCo ≥ 75%).
 - Structured logging (SLF4J / Logback). Observable HTTP API (OpenAPI).
 
 
