@@ -811,12 +811,15 @@ Indexes: `{ userId: 1, timestamp: -1 }`, `{ decision: 1, timestamp: -1 }`.
 
 ### Schema migrations
 
-**Flyway** only (not Liquibase):
+**Liquibase** only (not Flyway):
 
 ```text
-V1__create_users.sql
-V2__create_transactions.sql
-V3__create_audit_outbox.sql
+db/changelog/
+├── db.changelog-master.yaml
+└── changes/
+    ├── 001-create-users.yaml
+    ├── 002-create-transactions.yaml
+    └── 003-create-audit-outbox.yaml
 ```
 
 ---
@@ -1140,7 +1143,7 @@ flowchart LR
 
 
 - One `docker-compose.yml`: app, PostgreSQL, MongoDB.
-- App waits for PG via healthchecks, then **Flyway** migrations, then starts.
+- App waits for PG via healthchecks, then **Liquibase** migrations, then starts.
 - Outbox publisher is a `@Scheduled` worker **inside** the app (safe across instances via `SKIP LOCKED`).
 
 **Out of scope for this challenge:** Kafka / Zookeeper / KRaft, Redis for velocity or distributed locks, microservices, Drools, event sourcing, separate fraud or audit services. PostgreSQL outbox + scheduled publisher is sufficient. Kafka could be introduced later for many downstream consumers; Redis would add consistency concerns without being necessary for Rule 2.
@@ -1246,7 +1249,7 @@ Designed as additive; not required for the core path.
 
 Aligned with the challenge’s suggested order:
 
-1. Docker Compose + Flyway schema (users, transactions, outbox) + Mongo collection.
+1. Docker Compose + Liquibase schema (users, transactions, outbox) + Mongo collection.
 2. Domain model + `FraudEngine` and four rules with unit tests (including aggregation and time boundaries).
 3. `TransactionService` with `SELECT … FOR UPDATE`, double idempotency check, and outbox write inside one PG transaction.
 4. User APIs (`preApprovedTransactionLimit`, KYC).
