@@ -1,0 +1,73 @@
+info:
+  name: List transactions
+  type: http
+  seq: 9
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/transactions"
+  params:
+    - name: userId
+      value: "{{userId}}"
+      type: query
+    - name: limit
+      value: "50"
+      type: query
+    - name: from
+      value: "2020-01-01T00:00:00Z"
+      type: query
+      disabled: true
+    - name: to
+      value: "2099-01-01T00:00:00Z"
+      type: query
+      disabled: true
+    - name: status
+      value: APPROVED
+      type: query
+      disabled: true
+    - name: cursor
+      value: ""
+      type: query
+      disabled: true
+  auth: none
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("HTTP 200", function() {
+          expect(res.status).to.equal(200);
+        });
+
+        test("page shape: items, nextCursor, hasMore", function() {
+          expect(res.body.data).to.have.property("items").that.is.an("array");
+          expect(res.body.data).to.have.property("hasMore");
+          expect(res.body.errors).to.be.an("array").that.is.empty;
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # GET /api/v1/transactions
+
+  Cursor-paginated list/export for one user.
+
+  ## When available
+  Phase 9 (optional enhancement)
+
+  ## Query params
+  | Param | Required | Notes |
+  | ----- | -------- | ----- |
+  | `userId` | yes | Scope |
+  | `from` / `to` | no | Inclusive `created_at` bounds |
+  | `status` | no | `APPROVED` \| `FLAGGED` \| `DECLINED` |
+  | `cursor` | no | Opaque cursor |
+  | `limit` | no | Default 50, max 200 |
+
+  ## Success
+  - **HTTP** `200`
+  - `data.items`, `data.nextCursor`, `data.hasMore`

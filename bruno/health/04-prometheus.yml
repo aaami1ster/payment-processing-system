@@ -1,0 +1,46 @@
+info:
+  name: Prometheus metrics
+  type: http
+  seq: 4
+
+http:
+  method: GET
+  url: "{{baseUrl}}/actuator/prometheus"
+  headers:
+    - name: Accept
+      value: text/plain
+  auth: none
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("HTTP 200 when prometheus endpoint enabled", function() {
+          expect(res.status).to.equal(200);
+        });
+
+        test("body is scrape text", function() {
+          expect(res.body).to.be.a("string");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # GET /actuator/prometheus
+
+  Micrometer Prometheus scrape endpoint (Phase 5 observability).
+
+  ## When available
+  Phase 5+ (when actuator prometheus exposure is enabled)
+
+  ## Expected metrics (design)
+  - `payment.transactions.total{status}`
+  - `payment.processing.duration`
+  - outbox pending / publish metrics when practical
+
+  ## Note
+  If this returns 404, prometheus exposure is not enabled yet — enable in `application.yml` / management endpoints.

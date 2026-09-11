@@ -1,0 +1,66 @@
+info:
+  name: Idempotency replay
+  type: http
+  seq: 5
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/transactions"
+  headers:
+    - name: Idempotency-Key
+      value: "{{idempotencyKey}}"
+  body:
+    type: json
+    data: |-
+      {
+        "amount": 6200.00,
+        "userId": "{{userId}}",
+        "merchantId": "{{merchantId}}",
+        "category": "ELECTRONICS"
+      }
+  auth: none
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        const key = bru.getEnvVar("idempotencyKey");
+        const userId = bru.getEnvVar("userId");
+        if (!key || !userId) {
+          throw new Error("Run Process transaction first so idempotencyKey and userId are set");
+        }
+    - type: tests
+      code: |-
+        test("HTTP 201 replay", function() {
+          expect(res.status).to.equal(201);
+        });
+
+        test("same transactionId as original", function() {
+          const id = res.body.data.transactionId || res.body.data.id;
+          expect(id).to.equal(bru.getEnvVar("transactionId"));
+        });
+
+        test("errors empty", function() {
+          expect(res.body.errors).to.be.an("array").that.is.empty;
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # POST /api/v1/transactions — idempotent replay
+
+  Same `Idempotency-Key` + same fingerprint → return the **original** transaction.
+
+  ## When available
+  Phase 3+
+
+  ## Prerequisite
+  Run **Process transaction** first.
+
+  ## Expected
+  - **HTTP** `201`
+  - Same `transactionId` as first call

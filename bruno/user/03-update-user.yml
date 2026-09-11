@@ -1,0 +1,67 @@
+info:
+  name: Update user
+  type: http
+  seq: 3
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/v1/users/{{userId}}"
+  body:
+    type: json
+    data: |-
+      {
+        "kycStatus": "VERIFIED",
+        "preApprovedTransactionLimit": 15000
+      }
+  auth: none
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("HTTP 200", function() {
+          expect(res.status).to.equal(200);
+        });
+
+        test("envelope OK", function() {
+          expect(res.body.data).to.not.equal(null);
+          expect(res.body.errors).to.be.an("array").that.is.empty;
+        });
+
+        test("KYC and limit updated", function() {
+          expect(res.body.data.kycStatus).to.equal("VERIFIED");
+          expect(Number(res.body.data.preApprovedTransactionLimit)).to.equal(15000);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # PATCH /api/v1/users/{id}
+
+  Partial update of KYC status and/or `preApprovedTransactionLimit`.
+
+  ## When available
+  Phase 1+
+
+  ## Request body (any subset)
+  | Field | Notes |
+  | ----- | ----- |
+  | `kycStatus` | e.g. `PENDING`, `VERIFIED`, … |
+  | `preApprovedTransactionLimit` | Raised by ops after offline approval; Rule 1 uses this |
+
+  ## Success
+  - **HTTP** `200`
+  - `data` = updated user
+
+  ## Errors
+  | HTTP | `errors[].code` |
+  | ---- | --------------- |
+  | `404` | `USER_NOT_FOUND` / `NOT_FOUND` |
+  | `400` | `VALIDATION_ERROR` |
+
+  ## Why this matters
+  A limit of `15000` allows a `12000` payment that would otherwise be DECLINED by Rule 1.

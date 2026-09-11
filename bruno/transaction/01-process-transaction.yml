@@ -1,0 +1,109 @@
+info:
+  name: Process transaction
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/transactions"
+  headers:
+    - name: Idempotency-Key
+      value: "{{idempotencyKey}}"
+  body:
+    type: json
+    data: |-
+      {
+        "amount": 6200.00,
+        "userId": "{{userId}}",
+        "merchantId": "{{merchantId}}",
+        "category": "ELECTRONICS"
+      }
+  auth: none
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        let key = bru.getEnvVar("idempotencyKey");
+        if (!key || String(key).trim() === "") {
+          key = "idem-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+          bru.setEnvVar("idempotencyKey", key);
+        }
+        const userId = bru.getEnvVar("userId");
+        if (!userId || String(userId).trim() === "") {
+          throw new Error("userId is empty — run user/01-create-user first");
+        }
+    - type: after-response
+      code: |-
+        if (res.status === 201 && res.body && res.body.data) {
+          const id = res.body.data.transactionId || res.body.data.id;
+          if (id) {
+            bru.setEnvVar("transactionId", id);
+          }
+        }
+    - type: tests
+      code: |-
+        test("HTTP 201 for persisted business decision", function() {
+          expect(res.status).to.equal(201);
+        });
+
+        test("envelope: data.status present, errors empty", function() {
+          expect(res.body.data).to.not.equal(null);
+          expect(res.body.data).to.have.property("status");
+          expect(["APPROVED", "FLAGGED", "DECLINED"]).to.include(res.body.data.status);
+          expect(res.body.errors).to.be.an("array").that.is.empty;
+          expect(res.body.meta.requestId).to.be.a("string").that.is.not.empty;
+        });
+
+        test("transactionId returned", function() {
+          const id = res.body.data.transactionId || res.body.data.id;
+          expect(id).to.be.a("string").that.is.not.empty;
+        });
+
+        test("DECLINED never appears in errors[]", function() {
+          const codes = (res.body.errors || []).map(e => e.code);
+          expect(codes).to.not.include("DECLINED");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # POST /api/v1/transactions
+
+  Process a payment: lock user row → velocity + fraud → persist transaction + audit outbox → respond.
+
+  ## When available
+  Phase 3+
+
+  ## Headers
+  | Header | Required | Notes |
+  | ------ | -------- | ----- |
+  | `Idempotency-Key` | no | Replay-safe; same key + same fingerprint → original txn |
+
+  ## Request body
+  | Field | Required | Notes |
+  | ----- | -------- | ----- |
+  | `amount` | yes | > 0 |
+  | `userId` | yes | Existing user UUID |
+  | `merchantId` | yes | Merchant identifier |
+  | `category` | yes | e.g. `ELECTRONICS` |
+
+  ## Success (all business outcomes)
+  - **HTTP** `201 Created`
+  - `data.status` ∈ `APPROVED` \| `FLAGGED` \| `DECLINED`
+  - `errors` = `[]`
+
+  ## Errors
+  | HTTP | `errors[].code` | When |
+  | ---- | --------------- | ---- |
+  | `404` | `USER_NOT_FOUND` | Unknown user |
+  | `409` | `IDEMPOTENCY_CONFLICT` | Same key, different fingerprint |
+  | `400` | `VALIDATION_ERROR` | Malformed body |
+  | `503` | `SERVICE_UNAVAILABLE` | PostgreSQL / commit failure |
+
+  ## Side effects
+  Sets env `transactionId` and (if empty) `idempotencyKey`.

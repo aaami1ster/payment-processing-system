@@ -1,0 +1,59 @@
+info:
+  name: Idempotency conflict
+  type: http
+  seq: 6
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/transactions"
+  headers:
+    - name: Idempotency-Key
+      value: "{{idempotencyKey}}"
+  body:
+    type: json
+    data: |-
+      {
+        "amount": 99.00,
+        "userId": "{{userId}}",
+        "merchantId": "{{merchantId}}",
+        "category": "ELECTRONICS"
+      }
+  auth: none
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        const key = bru.getEnvVar("idempotencyKey");
+        if (!key) {
+          throw new Error("Run Process transaction first so idempotencyKey is set");
+        }
+    - type: tests
+      code: |-
+        test("HTTP 409 Conflict", function() {
+          expect(res.status).to.equal(409);
+        });
+
+        test("IDEMPOTENCY_CONFLICT in errors", function() {
+          expect(res.body.data).to.equal(null);
+          expect(res.body.errors.some(e => e.code === "IDEMPOTENCY_CONFLICT")).to.equal(true);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # POST /api/v1/transactions — idempotency conflict
+
+  Same `Idempotency-Key` but **different** payload fingerprint → `409`.
+
+  ## When available
+  Phase 3+
+
+  ## Expected
+  - **HTTP** `409`
+  - `errors[].code` = `IDEMPOTENCY_CONFLICT`
+  - `data` = `null`
