@@ -7,7 +7,8 @@ RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-RUN apk add --no-cache wget
+# BusyBox already provides wget; do not apk-add GNU wget (CVE-2025-69194, unfixed).
+RUN apk upgrade --no-cache
 COPY --from=build /workspace/target/payment-processing-system-*.jar /app/app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

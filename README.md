@@ -1,6 +1,6 @@
 # Payment Processing System
 
-Spring Boot payment service with fraud detection (challenge MVP). Design docs live in [`docs/`](docs/).
+Spring Boot **4.1.1** payment service with fraud detection (challenge MVP; Boot 4 only because Spring Framework High/Critical CVEs have no OSS 6.2.x fix — see `docs/plan.md`). Design docs live in [`docs/`](docs/).
 
 ## Prerequisites
 
@@ -71,6 +71,20 @@ mvn -q -DskipTests package
 ```
 
 Requires PostgreSQL + Mongo reachable at the URLs in `src/main/resources/application.yml` (or override via env).
+
+## Security vulnerability scan
+
+Run after each phase (and before marking validation done):
+
+```bash
+./scripts/check-security-docker-scout.sh   # fast (Docker Scout; docker login once)
+BUILD_APP_IMAGE=1 ./scripts/check-security-docker-scout.sh  # rebuild app then scan
+./scripts/check-security-owasp.sh          # Maven deps (OWASP; needs NVD_API_KEY in .env)
+# or:
+./scripts/check-security-vulnerabilities.sh
+```
+
+Gate = project sources + app image (Temurin base ignored by default). Official `postgres`/`mongo` images are scanned as warnings (`FAIL_ON_VENDOR=1` to enforce). Set `NVD_API_KEY` in `.env` (see `.env.example`). Reports: `target/security/scout/` and `target/security/owasp/`.
 
 ## IntelliJ: debug with `.env`
 

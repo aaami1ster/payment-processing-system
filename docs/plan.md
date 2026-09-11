@@ -23,18 +23,22 @@ Persistence unavailable → 503 — never fabricate a business decision
 3. Do not start the next phase until the current phase’s **Phase exit demo** passes.
 4. Agents must follow the design docs; if something conflicts, **design docs win** over improvisation.
 5. After each phase that exposes HTTP, run the matching **Bruno** folder (see below) in addition to automated tests / curl demos.
+6. **Every phase validation** must run the security vulnerability scan (see below) and fix High/Critical findings before marking the phase done.
 
 
 | Item             | Value                                                                                             |
 | ---------------- | ------------------------------------------------------------------------------------------------- |
 | Base package     | `com.example.payment`                                                                             |
 | Main class       | `com.example.payment.PaymentProcessingApplication`                                                |
-| Stack            | Java 21+, Spring Boot 3.x, Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo |
+| Stack            | Java 21+, Spring Boot **4.1.1** (prefer 3.x; see note), Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo |
 | Logging          | SLF4J + Logback via `LogFactory` only — never `System.out`                                        |
-| Manual API tests | Bruno collection in `[bruno/](bruno/)`                                                            |
+| Manual API tests | Bruno collection in [`bruno/`](bruno/)                                                            |
+| Security scan    | [`check-security-docker-scout.sh`](../scripts/check-security-docker-scout.sh) + [`check-security-owasp.sh`](../scripts/check-security-owasp.sh) |
 
 
 **Progress legend:** `- [ ]` not done · `- [x]` done
+
+**Spring Boot version:** Challenge asks for 3.x. We evaluated **3.5.16** (last OSS 3.x) plus dependency overrides (Tomcat, Jackson, PostgreSQL JDBC). That still leaves High/Critical **Spring Framework** CVEs (e.g. CVE-2026-47884, CVE-2026-59313): NVD requires Framework **6.2.20+**, which is **not on Maven Central** (6.2 ends at 6.2.19). The available OSS fix is Framework **7.0.9** via Boot **4.1.1** — so 4.x is used only because 3.x cannot clear the OWASP gate.
 
 ---
 
@@ -64,7 +68,38 @@ npx @usebruno/cli run user --env Local
 npx @usebruno/cli run transaction --env Local
 ```
 
-Details: `[bruno/README.md](bruno/README.md)`. Keep Bruno requests in sync when API contracts change (LLD wins).
+Details: [`bruno/README.md`](bruno/README.md). Keep Bruno requests in sync when API contracts change (LLD wins).
+
+---
+
+## Security vulnerability scan (every phase validation)
+
+Before marking **any** phase done, run both scanners (or the wrapper):
+
+```bash
+./scripts/check-security-docker-scout.sh   # fast — Docker Scout (needs docker login)
+./scripts/check-security-owasp.sh          # Maven deps — OWASP + NVD_API_KEY from .env
+# or both:
+./scripts/check-security-vulnerabilities.sh
+```
+
+| Script | Tool | Notes |
+| ------ | ---- | ----- |
+| `scripts/check-security-docker-scout.sh` | Docker Scout | App `pom`+`src` + app image (gate); vendor PG/Mongo warn-only unless `FAIL_ON_VENDOR=1` |
+| `scripts/check-security-owasp.sh` | OWASP Dependency-Check | Uses `NVD_API_KEY` from `.env`; report under `target/security/owasp/` |
+| `scripts/check-security-vulnerabilities.sh` | both | `SKIP_SCOUT=1` / `SKIP_OWASP=1` to run one |
+
+```bash
+SKIP_IMAGES=1 ./scripts/check-security-docker-scout.sh
+BUILD_APP_IMAGE=1 ./scripts/check-security-docker-scout.sh
+FAIL_ON_VENDOR=1 ./scripts/check-security-docker-scout.sh   # also fail on postgres/mongo image CVEs
+IGNORE_BASE=0 ./scripts/check-security-docker-scout.sh       # include Temurin/Alpine base CVEs
+FAIL_CVSS=8 ./scripts/check-security-owasp.sh
+```
+
+Put your NVD key in **`.env`** only (`NVD_API_KEY=…`) — never commit it. Template: `.env.example`.
+
+Complements (does not replace) Phase 11 SonarQube / static analysis.
 
 ---
 
@@ -112,7 +147,7 @@ Phase 7+ ──► optional extras
 
 **Phase MVP / deliverables**
 
-- Maven project (`com.example:payment-processing-system`) with Spring Boot 3.x
+- Maven project (`com.example:payment-processing-system`) with Spring Boot 4.x
 - `docker-compose.yml`: app, PostgreSQL, MongoDB + healthchecks
 - Liquibase changelogs: `users`, `transactions`, `audit_outbox` (+ indexes from LLD)
 - Package skeleton under `com.example.payment` (api / service / domain / data / config / common)
@@ -165,6 +200,10 @@ cd bruno && npx @usebruno/cli run health --env Local
   **Description:** Keep `bruno/health/` docs/tests aligned with actuator paths (liveness/readiness semantics per LLD).  
   **Acceptance:** `bru run health --env Local` passes against a healthy compose stack.
 
+- [ ] **T0.7 — Security vulnerability scan script**  
+  **Description:** `check-security-docker-scout.sh` + `check-security-owasp.sh` (NVD key in `.env`); wired into every phase validation.  
+  **Acceptance:** Both scripts documented; High/Critical CVEs fixed or gated.
+
 
 
 ### AI implementation prompt (Phase 0)
@@ -175,10 +214,10 @@ You are implementing Phase 0 of the payment-processing-system.
 Read and follow:
 - docs/high-level-design.md (project identity, package layout, deployment topology)
 - docs/low-level-design.md (PostgreSQL tables, indexes, Liquibase layout)
-- plan.md Phase 0 tasks T0.1–T0.6
+- plan.md Phase 0 tasks T0.1–T0.7
 
 Implement ONLY Phase 0:
-1. Maven Spring Boot 3.x project (groupId com.example, artifactId payment-processing-system).
+1. Maven Spring Boot 4.x project (groupId com.example, artifactId payment-processing-system).
 2. Main class com.example.payment.PaymentProcessingApplication.
 3. Package skeleton: api, service.command, service.query, domain, data.postgres, data.mongo, data.outbox, integration, config, common.logging.
 4. Keep LogFactory; configure SLF4J/Logback (no System.out).
@@ -187,6 +226,7 @@ Implement ONLY Phase 0:
 7. Actuator health; readiness should require PostgreSQL.
 8. Minimal root README: prerequisites, docker compose up, health check.
 9. Verify Bruno `bruno/health/` against the running stack (adjust only if actuator paths differ from design).
+10. Add OWASP + Docker Scout security scripts; document in README/plan; NVD key only in `.env`.
 
 Do NOT implement business APIs, fraud rules, or Mongo publishers yet.
 When done, list files changed and how to verify Phase 0 exit demo from plan.md.
@@ -207,8 +247,9 @@ Checklist:
 5. No business endpoints required yet; no System.out.
 6. README stub documents how to run.
 7. Bruno health folder runs successfully (liveness/readiness semantics).
+8. Run ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh; fix High/Critical CVEs; cite target/security/scout/ and owasp/.
 
-Run the Phase 0 exit demo commands. Report PASS/FAIL per task T0.1–T0.6 with evidence.
+Run the Phase 0 exit demo commands. Report PASS/FAIL per task T0.1–T0.7 with evidence.
 Fix only Phase 0 gaps; do not start Phase 1.
 ```
 
@@ -313,6 +354,8 @@ Verify:
 6. No transaction/fraud code required yet.
 
 Run Phase 1 exit demo. PASS/FAIL per T1.1–T1.5. Fix only Phase 1 gaps.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -404,6 +447,8 @@ Must verify:
 5. Unit tests pass without Spring.
 
 PASS/FAIL T2.1–T2.4 with evidence. Fix only Phase 2 gaps.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -521,6 +566,8 @@ Critical checks:
 7. Bruno transaction POST suite passes where endpoints exist.
 
 Run Phase 3 exit demo. PASS/FAIL T3.1–T3.6. Fix only Phase 3 gaps.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -612,6 +659,8 @@ Verify:
 5. Phase 3 API behavior unchanged.
 
 Run Phase 4 exit demo. PASS/FAIL T4.1–T4.4. Fix only Phase 4 gaps.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -710,6 +759,8 @@ Checks:
 6. Bruno user + transaction folders pass for available endpoints.
 
 PASS/FAIL T5.1–T5.5. Fix only Phase 5 gaps.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -810,6 +861,8 @@ Checklist against challenge deliverables:
 
 Run mvn verify and Phase 6 exit demo. PASS/FAIL T6.1–T6.4.
 If gaps remain in Phases 0–5, list them separately; fix MVP blockers.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 
@@ -866,6 +919,8 @@ Include tests and README note. Demo burst → 429.
 
 ```text
 Validate Phase 7: over-limit returns 429 with no DB writes; under-limit unchanged; Rule 2 still works. PASS/FAIL T7.1–T7.2.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -906,6 +961,8 @@ Redis optional: app works if Redis absent/down. Add tests + README.
 
 ```text
 Validate Phase 8: GET users can cache; update invalidates; authorize path never uses Redis; payments work with Redis down. PASS/FAIL T8.1–T8.2.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -946,6 +1003,8 @@ Include tests, OpenAPI, README examples, and verify Bruno transaction list reque
 
 ```text
 Validate Phase 9: cursor pages are stable; limit caps work; authorize POST unchanged; Bruno `09-list-transactions` passes. PASS/FAIL T9.1–T9.2.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -986,6 +1045,8 @@ Use test double for subscriber. Update README. No Kafka.
 
 ```text
 Validate Phase 10: webhook after commit only; retries work; payment succeeds if webhook endpoint down; HMAC present. PASS/FAIL T10.1–T10.2.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---
@@ -1026,6 +1087,8 @@ Update README with commands. Keep JaCoCo ≥ 75%.
 
 ```text
 Validate Phase 11: analysis runs via Maven docs; app runtime unchanged; JaCoCo still enforced. PASS/FAIL T11.1–T11.2.
+
+Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-owasp.sh — fix High/Critical findings before PASS; cite target/security/scout/ and target/security/owasp/.
 ```
 
 ---

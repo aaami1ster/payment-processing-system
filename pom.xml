@@ -7,7 +7,10 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.5</version>
+        <!-- Challenge prefers Boot 3.x. Last OSS 3.x (3.5.16) ships Spring Framework 6.2.19;
+             High/Critical CVEs (e.g. CVE-2026-47884, CVE-2026-59313) require 6.2.20+ which is
+             not published to Maven Central — only Spring Framework 7.0.9+ (Boot 4.1.x) is available. -->
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -19,6 +22,10 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- Boot 4.1.1 ships Tomcat 11.0.24; NVD needs >= 11.0.25 for recent CVEs -->
+        <tomcat.version>11.0.25</tomcat.version>
+        <dependency-check.failBuildOnCVSS>7</dependency-check.failBuildOnCVSS>
+        <dependency-check.version>13.0.0</dependency-check.version>
     </properties>
 
     <dependencies>
@@ -58,7 +65,7 @@
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
-            <version>8.0</version>
+            <version>9.0</version>
         </dependency>
 
         <dependency>
@@ -73,6 +80,22 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>${dependency-check.version}</version>
+                <configuration>
+                    <failBuildOnCVSS>${dependency-check.failBuildOnCVSS}</failBuildOnCVSS>
+                    <formats>
+                        <format>HTML</format>
+                        <format>JSON</format>
+                    </formats>
+                    <prettyPrint>true</prettyPrint>
+                    <suppressionFiles>
+                        <suppressionFile>${project.basedir}/owasp-suppressions.xml</suppressionFile>
+                    </suppressionFiles>
+                </configuration>
             </plugin>
         </plugins>
     </build>
