@@ -141,27 +141,27 @@ cd bruno && npx @usebruno/cli run health --env Local
 
 ### Tasks
 
-- [ ] **T0.1 — Maven / Spring Boot skeleton**  
+- [x] **T0.1 — Maven / Spring Boot skeleton**  
   **Description:** Create `pom.xml`, main application class, `application.yml` (datasources placeholders, actuator).  
   **Acceptance:** `mvn -q -DskipTests package` succeeds; main class is `PaymentProcessingApplication`.
 
-- [ ] **T0.2 — Package layout + LogFactory**  
+- [x] **T0.2 — Package layout + LogFactory**  
   **Description:** Create empty package dirs per HLD; keep/ensure `common.logging.LogFactory`.  
   **Acceptance:** Layout matches HLD; no `System.out` usage introduced.
 
-- [ ] **T0.3 — Liquibase schema**  
+- [x] **T0.3 — Liquibase schema**  
   **Description:** Changelogs for users, transactions (incl. idempotency partial unique index), audit_outbox per LLD.  
   **Acceptance:** Fresh Postgres applies all changelogs; indexes exist as designed.
 
-- [ ] **T0.4 — Docker Compose**  
+- [x] **T0.4 — Docker Compose**  
   **Description:** Postgres, Mongo, app; app waits for Postgres; Liquibase runs on startup.  
   **Acceptance:** Single `docker compose up --build` starts healthy stack.
 
-- [ ] **T0.5 — Health + README stub**  
+- [x] **T0.5 — Health + README stub**  
   **Description:** Actuator health; README with Java/Maven/Docker prerequisites and run steps.  
   **Acceptance:** Health endpoint reachable; README steps work on a clean machine.
 
-- [ ] **T0.6 — Bruno health collection**  
+- [x] **T0.6 — Bruno health collection**  
   **Description:** Keep `bruno/health/` docs/tests aligned with actuator paths (liveness/readiness semantics per LLD).  
   **Acceptance:** `bru run health --env Local` passes against a healthy compose stack.
 

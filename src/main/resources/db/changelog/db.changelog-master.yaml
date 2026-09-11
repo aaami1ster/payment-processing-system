@@ -1,0 +1,13 @@
+databaseChangeLog:
+  # Target database: PostgreSQL 18 (Docker: postgres:18-alpine).
+  # Schema uses standard types (UUID, TEXT, TEXT[], NUMERIC, TIMESTAMPTZ, JSONB)
+  # and partial unique indexes — no PG-18-specific DDL required.
+  - include:
+      file: changes/001-create-users.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/002-create-transactions.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: changes/003-create-audit-outbox.yaml
+      relativeToChangelogFile: true

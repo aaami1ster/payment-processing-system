@@ -1,0 +1,82 @@
+# Payment Processing System
+
+Spring Boot payment service with fraud detection (challenge MVP). Design docs live in [`docs/`](docs/).
+
+## Prerequisites
+
+- Java 21+
+- Maven 3.9+
+- Docker + Docker Compose
+
+## Runtime stack (Compose)
+
+| Service | Image |
+| ------- | ----- |
+| App | built from `Dockerfile` (Temurin 21) |
+| PostgreSQL | `postgres:18-alpine` |
+| MongoDB | `mongo:8` (official image; no alpine tag) |
+
+## Run with Docker Compose
+
+```bash
+cp .env.example .env   # first time only; .env is gitignored
+docker compose up --build -d
+```
+
+Configuration lives in `.env` (images, ports, DB credentials, Mongo URI). See `.env.example`.
+
+If you previously ran an older Postgres major (≤17) with this project, wipe volumes once so PG 18 can init a fresh data dir:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
+Wait until the app is healthy, then check (port from `APP_PORT`, default `8080`):
+
+```bash
+curl -s http://localhost:8080/actuator/health
+curl -s http://localhost:8080/actuator/health/liveness
+curl -s http://localhost:8080/actuator/health/readiness
+```
+
+Expect `"status":"UP"`. Readiness requires PostgreSQL; MongoDB can be down without failing readiness (app still waits for a healthy Mongo on first compose start).
+
+Verify Liquibase tables:
+
+```bash
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\dt'
+# or defaults: -U payments -d payments
+# expect: users, transactions, audit_outbox (+ Liquibase tables)
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+## Manual API tests (Bruno)
+
+Open [`bruno/`](bruno/) in [Bruno](https://www.usebruno.com/) (YAML / OpenCollection) with env **Local**, or:
+
+```bash
+cd bruno && npx @usebruno/cli run health --env Local
+```
+
+## Local Maven build
+
+```bash
+mvn -q -DskipTests package
+```
+
+Requires PostgreSQL + Mongo reachable at the URLs in `src/main/resources/application.yml` (or override via env).
+
+## Docs
+
+| Doc | Purpose |
+| --- | ------- |
+| [docs/README.md](docs/README.md) | Design index |
+| [docs/plan.md](docs/plan.md) | Phased implementation plan |
+| [docs/high-level-design.md](docs/high-level-design.md) | Architecture |
+| [docs/low-level-design.md](docs/low-level-design.md) | Schema, API, fraud rules |
