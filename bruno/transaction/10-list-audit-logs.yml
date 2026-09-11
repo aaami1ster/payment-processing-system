@@ -1,0 +1,57 @@
+info:
+  name: List audit logs
+  type: http
+  seq: 10
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/audit-logs"
+  params:
+    - name: userId
+      value: "{{userId}}"
+      type: query
+    - name: from
+      value: ""
+      type: query
+      disabled: true
+    - name: to
+      value: ""
+      type: query
+      disabled: true
+    - name: cursor
+      value: ""
+      type: query
+      disabled: true
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("HTTP 200 when endpoint is implemented", function() {
+          expect(res.status).to.equal(200);
+        });
+
+        test("envelope with data page", function() {
+          expect(res.body.data).to.not.equal(null);
+          expect(res.body.errors).to.be.an("array").that.is.empty;
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # GET /api/v1/audit-logs
+
+  Optional companion export against Mongo audit documents.
+
+  ## When available
+  After Phase 4 audit projection + pagination-style export
+
+  ## Query params
+  `userId`, `from`, `to`, `cursor` — same cursor pattern as list transactions.
+
+  ## Notes
+  Eventually consistent with PostgreSQL; payments do not wait on Mongo.

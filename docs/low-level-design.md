@@ -381,7 +381,7 @@ Indexes: `{ userId: 1, timestamp: -1 }`, `{ decision: 1, timestamp: -1 }`.
 
 ### Schema migrations
 
-**Liquibase** only (not Flyway):
+**Liquibase** only (not Flyway). Target runtime: **PostgreSQL 18** (Compose: `postgres:18-alpine`). No Mongo schema migrations — audit indexes are created by the app/repository layer when that phase lands.
 
 ```text
 db/changelog/
@@ -392,6 +392,7 @@ db/changelog/
     └── 003-create-audit-outbox.yaml
 ```
 
+DDL uses portable Postgres features (`UUID`, `TEXT[]`, `JSONB`, `TIMESTAMPTZ`, partial unique indexes). No version-specific syntax is required for 18.
 ---
 
 ## API Design
