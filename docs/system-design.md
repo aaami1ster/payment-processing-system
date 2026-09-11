@@ -57,7 +57,7 @@ These are not specified in the brief; they are called out so behavior is determi
 | Missing user           | Unknown `userId` is a client error (`404`), not a fraud decline.                                                                                      |
 | PostgreSQL unavailable | Return `503 Service Unavailable`. Do **not** approve and do **not** fabricate a fraud `DECLINED`. Infrastructure failure ≠ business decline.          |
 | Idempotency            | Optional `Idempotency-Key` header. Same key + same request fingerprint → original result. Same key + different fingerprint → `409`.                   |
-| Declined HTTP status   | `DECLINED` returns `201 Created` — the transaction resource was successfully processed and persisted. Business outcome is in the body `status` field. |
+| Declined HTTP status   | `DECLINED` returns `201 Created` with `ApiResponse.data.status = DECLINED` and empty `errors`. Business outcome is in `data`, not an API error. |
 
 
 ---
@@ -74,7 +74,8 @@ flowchart TB
 
     subgraph App["Payment Service (Spring Boot)"]
         API["API layer<br/>controllers, request/response, exception mapping"]
-        Svc["Service layer<br/>TransactionService, UserService"]
+        Cmd["Commands<br/>ProcessTransaction, Create/UpdateUser"]
+        Qry["Queries<br/>GetUser, GetTransaction"]
         Domain["Domain<br/>User, Transaction, FraudEngine + rules"]
         Data["Data layer<br/>Postgres, Mongo, outbox"]
         Integ["Integration<br/>future external clients"]
@@ -84,10 +85,12 @@ flowchart TB
     Mongo[("MongoDB<br/>audit logs")]
 
     Client --> API
-    API --> Svc
-    Svc --> Domain
-    Svc --> Data
-    Svc --> Integ
+    API --> Cmd
+    API --> Qry
+    Cmd --> Domain
+    Cmd --> Data
+    Cmd --> Integ
+    Qry --> Data
     Data --> PG
     Data --> Mongo
 ```
@@ -101,8 +104,9 @@ flowchart TB
 
 | Component               | Responsibility                                                                                                                                  |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **API layer**           | HTTP contracts, request/response DTOs, status-code mapping, OpenAPI. No business rules.                                                         |
-| **Service layer**       | Orchestrates use cases: idempotency, locking, load data, call domain, persist, return result **after commit**.                                  |
+| **API layer**           | HTTP contracts, request/response DTOs, status-code mapping, OpenAPI. Maps each endpoint to one command or query handler. No business rules.   |
+| **Commands**            | Write use cases: idempotency, locking, load data, call domain, persist, return result **after commit**.                                         |
+| **Queries**             | Read-only use cases: fetch user/transaction views. No locks, no side effects. May later use cache/replica.                                      |
 | **Domain**              | Business concepts and policies (`User`, `Transaction`, `FraudEngine` / rules). No HTTP, JPA, or Mongo types.                                    |
 | **Data layer**          | Database-specific entities, repositories, and outbox publisher.                                                                                 |
 | **Integration**         | Outbound third-party clients (empty until needed; e.g. webhooks).                                                                               |
@@ -122,7 +126,19 @@ PostgreSQL is the **system of record**. MongoDB is an **audit projection**. A de
 
 ## 3. Layered Design (Inside the Service)
 
-Layered packages sized for this challenge: easy to review, conventional Spring layout, and clear answers to “where does X live?” Interfaces exist where they protect boundaries — especially replaceable or failure-prone adapters (e.g. audit publish) — not for every class.
+### Project identity
+
+| Item | Value |
+| ---- | ----- |
+| Application name | `payment-processing-system` |
+| Maven `groupId` | `com.example` |
+| Maven `artifactId` | `payment-processing-system` |
+| Base Java package | `com.example.payment` |
+| Main class | `com.example.payment.PaymentProcessingApplication` |
+
+Spring Boot module layout uses base package `com.example.payment`. Subpackages (`api`, `service`, `domain`, `data`, …) hang under that root.
+
+Layered packages sized for this challenge, with **application-level CQRS-lite**: controllers call command or query handlers; the same PostgreSQL/Mongo stores remain underneath. No separate read database, no mediator bus. Interfaces exist where they protect boundaries — especially replaceable or failure-prone adapters (e.g. audit publish) — not for every class.
 
 ```
 com.example.payment
@@ -131,11 +147,22 @@ com.example.payment
 │   ├── controller
 │   ├── request
 │   ├── response
+│   │   ├── ApiResponse.java
+│   │   ├── ApiError.java
+│   │   ├── ApiMeta.java
+│   │   ├── TransactionResponse.java
+│   │   └── UserResponse.java
 │   └── exception
+│       └── GlobalExceptionHandler.java
 │
 ├── service
-│   ├── TransactionService.java
-│   ├── UserService.java
+│   ├── command
+│   │   ├── ProcessTransactionHandler.java
+│   │   ├── CreateUserHandler.java
+│   │   └── UpdateUserHandler.java
+│   ├── query
+│   │   ├── GetUserHandler.java
+│   │   └── GetTransactionHandler.java
 │   └── mapper
 │
 ├── domain
@@ -184,6 +211,8 @@ com.example.payment
 │
 └── common
     ├── exception
+    ├── logging
+    │   └── LogFactory.java
     └── util
 ```
 
@@ -191,26 +220,60 @@ com.example.payment
 
 | Package | Answers | Contains |
 | ------- | ------- | -------- |
-| `api` | How do clients talk to us? | Controllers, request/response DTOs, HTTP exception mapping |
-| `service` | In what order do we complete a use case? | Orchestration: locks, repositories, domain calls, persistence |
+| `api` | How do clients talk to us? | Controllers, request DTOs, standard `ApiResponse` envelope, `GlobalExceptionHandler` |
+| `service.command` | How do we mutate state for a use case? | Write handlers: locks, domain calls, persistence, outbox |
+| `service.query` | How do we read state for a use case? | Read-only handlers: no locks, no side effects |
 | `domain` | What are the business concepts and rules? | Models, enums, fraud engine and rules |
 | `data` | How do we store and retrieve state? | Postgres/Mongo entities, repositories, outbox |
 | `integration` | How do we talk to systems we don’t own? | External clients (webhooks, etc.) when needed |
 | `config` | How is the framework wired? | Spring beans, typed properties, OpenAPI |
-| `common` | What is truly cross-cutting? | Shared exceptions/utils — **not** business enums |
+| `common` | What is truly cross-cutting? | Shared exceptions, **`LogFactory`**, utils — **not** business enums |
 
 Business enums (`TransactionStatus`, `KycStatus`, `Category`, …) live next to their domain, not in a generic `constants` package. Thresholds and toggles live in `config` (`FraudProperties`), not scattered magic numbers.
 
-**Dependency rule:** `api` → `service` → `domain`. `service` depends on `data` / `integration` for I/O (or on narrow out-port interfaces implemented there). `domain` has no Spring, JDBC, or Mongo types. Prefer interfaces over inheritance; do not introduce abstract base classes unless subclasses share real invariant behavior.
+**Dependency rule:** `api` → `service` → `domain`. Commands depend on `data` / `integration` for I/O. Queries depend on `data` for reads only. `domain` has no Spring, JDBC, or Mongo types. Prefer interfaces over inheritance; do not introduce abstract base classes unless subclasses share real invariant behavior.
+
+### CQRS-lite (application level, same database)
+
+User profile **writes** are rare; **reads** happen on every payment and on `GET /users`. That asymmetry motivates separating command and query handlers — not a second database.
+
+| HTTP | Handler | Kind |
+| ---- | ------- | ---- |
+| `POST /api/v1/transactions` | `ProcessTransactionHandler` | Command |
+| `POST /api/v1/users` | `CreateUserHandler` | Command |
+| `PATCH /api/v1/users/{id}` | `UpdateUserHandler` | Command |
+| `GET /api/v1/users/{id}` | `GetUserHandler` | Query |
+| `GET /api/v1/transactions/{id}` | `GetTransactionHandler` | Query |
+
+**Rules:**
+
+- Commands own `@Transactional` writes, idempotency, and row locks.
+- Queries are read-only; they must not acquire `FOR UPDATE` or write outbox rows.
+- Same Postgres primary today. Queries may later use cache or a read replica; commands always use the primary.
+
+**Critical:** the user load inside `ProcessTransactionHandler` is **not** routed through `GetUserHandler`. Authorization requires:
+
+```text
+SELECT … FOR UPDATE  (same PG transaction as velocity count + insert + outbox)
+```
+
+That read is uncacheable. Caching (if added later) applies only to query handlers such as `GetUserHandler`. After `UpdateUserHandler`, evict any `user:{id}` cache entry so GETs see fresh data. Payment never trusts the cache.
+
+```text
+GetUserHandler              → optional cache → DB (read-only)
+ProcessTransactionHandler   → userRepository.findByIdForUpdate()  // primary only
+UpdateUserHandler           → DB write → invalidate cache key
+```
 
 ### Why separate `service` and `domain` (orchestration)
 
 They answer different questions:
 
 - **`domain`** — *What* are the business concepts and rules?
-- **`service`** — *In what order* do we coordinate those rules, repositories, locks, and integrations to finish a use case?
+- **`service.command`** — *In what order* do we coordinate those rules, repositories, locks, and integrations to finish a write use case?
+- **`service.query`** — *How* do we expose a read model without side effects?
 
-That coordination is **orchestration**.
+That write-side coordination is **orchestration**.
 
 Domain logic is policy, for example:
 
@@ -221,7 +284,7 @@ if highRiskCategory && amount > 5000 → DECLINED
 
 Those rules must not know HTTP, JPA, Mongo, row locks, `@Transactional`, or repositories. They live under `domain/fraud`.
 
-`TransactionService` coordinates the use case:
+`ProcessTransactionHandler` coordinates the write use case:
 
 ```text
 check idempotency
@@ -247,7 +310,7 @@ Simplified shape:
 
 ```java
 @Service
-public class TransactionService {
+public class ProcessTransactionHandler {
 
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
@@ -255,7 +318,7 @@ public class TransactionService {
     private final AuditOutboxRepository outboxRepository;
 
     @Transactional
-    public TransactionResult process(ProcessTransactionCommand command) {
+    public TransactionResult handle(ProcessTransactionCommand command) {
         User user = userRepository
                 .findByIdForUpdate(command.userId())
                 .orElseThrow(UserNotFoundException::new);
@@ -276,21 +339,22 @@ public class TransactionService {
 }
 ```
 
-The service does **not** decide “amount > 5000 means X.” It gathers data, asks the domain to decide, then persists. Analogy: `TransactionService` is the conductor; `FraudRule` classes are the performers; repositories are persistence collaborators.
+The handler does **not** decide “amount > 5000 means X.” It gathers data, asks the domain to decide, then persists. Analogy: the command handler is the conductor; `FraudRule` classes are the performers; repositories are persistence collaborators.
 
 **Change isolation:**
 
 | Change | Touch |
 | ------ | ----- |
 | Rule 2 threshold 3 → 5 | `VelocityRule` (+ its unit tests) |
-| Audit sync to Postgres instead of Mongo/outbox | Orchestration / `data` path |
+| Audit sync to Postgres instead of Mongo/outbox | Command / `data` path |
+| Cache `GET /users` | `GetUserHandler` (+ invalidation on update) only |
 | HTTP status mapping | `api` only |
 
 Fraud rules stay unit-testable with plain objects and a fixed `Clock` — no Spring context, no database, no mocks of persistence.
 
 ### Scale note
 
-For a much larger system, package-by-feature (`transaction/`, `user/`, `audit/`, each with its own api/service/data) can scale better. For this coding challenge, layered packages are easier to review and entirely appropriate.
+For a much larger system, package-by-feature (`transaction/`, `user/`, `audit/`, each with its own api/service/data) can scale better. For this coding challenge, layered packages plus CQRS-lite handlers are easier to review and entirely appropriate. A separate read database or Redis on the authorize path is **out of scope**; CQRS-lite only keeps the door open for query-side optimization later.
 
 ---
 
@@ -303,7 +367,7 @@ sequenceDiagram
     autonumber
     participant C as Client
     participant API as TransactionController
-    participant TS as TransactionService
+    participant TS as ProcessTransactionHandler
     participant PG as PostgreSQL
     participant FE as FraudEngine
     participant OB as OutboxPublisher
@@ -438,7 +502,7 @@ The client is not blocked on Mongo. Audit intent cannot disappear on restart bec
 
 ### Why a dedicated engine (not inline `if`s in the service)
 
-Putting rules in `TransactionService` would mix orchestration with policy and make Rule 4 (flag-but-allow) easy to get wrong when combined with declines.
+Putting rules in `ProcessTransactionHandler` would mix orchestration with policy and make Rule 4 (flag-but-allow) easy to get wrong when combined with declines.
 
 Rules live in a **small in-process engine**:
 
@@ -828,13 +892,51 @@ db/changelog/
 
 ## 8. API Design
 
-Base path: `/api/v1`. JSON. `X-Request-Id` echoed on every response.
+Base path: `/api/v1`. JSON. `X-Request-Id` is accepted or generated, echoed as a response header, and included in every body via `meta.requestId`.
+
+Controllers return `ResponseEntity<ApiResponse<T>>` so the **HTTP status line** and the envelope stay in sync. Do **not** put an HTTP `statusCode` field in the body (HTTP is authoritative).
+
+### Standard response envelope
+
+Every endpoint uses the same shape:
+
+```java
+public record ApiResponse<T>(
+        T data,
+        String message,
+        List<ApiError> errors,
+        ApiMeta meta
+) {}
+
+public record ApiError(
+        String code,
+        String field,
+        String message
+) {}
+
+public record ApiMeta(
+        String requestId
+) {}
+```
+
+| Field | Success | Error | Notes |
+| ----- | ------- | ----- | ----- |
+| `data` | object or array | `null` | The resource(s) |
+| `message` | short human summary | short human summary | Not for client branching |
+| `errors` | `[]` | one or more items | Stable `code` for clients; optional `field` for validation |
+| `meta.requestId` | always | always | Correlate with logs / `X-Request-Id` |
+
+**Factory helpers** (e.g. `ApiResponse.ok`, `ApiResponse.created`, `ApiResponse.failure`) keep controllers thin. `GlobalExceptionHandler` maps domain/API exceptions to the same envelope.
+
+**Business vs API errors:** fraud `DECLINED` / `FLAGGED` are **success** payloads inside `data.status`. They must **never** appear in `errors[]`. `errors[]` is only for request, authz, conflict, and infrastructure failures.
 
 ### Transactions
 
 `POST /api/v1/transactions`
 
 Headers: optional `Idempotency-Key`.
+
+Request body:
 
 ```json
 {
@@ -846,40 +948,95 @@ Headers: optional `Idempotency-Key`.
 ```
 
 
-| Outcome                                 | HTTP          | Body `status`                        |
-| --------------------------------------- | ------------- | ------------------------------------ |
-| Processed (any business outcome)        | `201 Created` | `APPROVED`, `FLAGGED`, or `DECLINED` |
-| Unknown user                            | `404`         | —                                    |
-| Same idempotency key, different payload | `409`         | —                                    |
-| Malformed request                       | `400`         | —                                    |
-| PostgreSQL unavailable / commit failed  | `503`         | —                                    |
+| Outcome                                 | HTTP          | `data`                         | `errors` |
+| --------------------------------------- | ------------- | ------------------------------ | -------- |
+| Processed (any business outcome)        | `201 Created` | transaction (`APPROVED` / `FLAGGED` / `DECLINED`) | `[]` |
+| Unknown user                            | `404`         | `null`                         | `USER_NOT_FOUND` |
+| Same idempotency key, different payload | `409`         | `null`                         | `IDEMPOTENCY_CONFLICT` |
+| Malformed / invalid request             | `400`         | `null`                         | `VALIDATION_ERROR` (per field) |
+| Resource not found (`GET`)              | `404`         | `null`                         | `NOT_FOUND` |
+| PostgreSQL unavailable / commit failed  | `503`         | `null`                         | `SERVICE_UNAVAILABLE` |
 
 
-All three business statuses return `201` because each represents a successfully evaluated and **persisted** transaction resource. The authorization outcome lives in `status`. `DECLINED` means the **business** rejected the payment — not that the HTTP request failed.
+All three business statuses return `201` because each represents a successfully evaluated and **persisted** transaction resource. The authorization outcome lives in `data.status`. `DECLINED` means the **business** rejected the payment — not that the HTTP request failed.
 
-```json
-{
-  "transactionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  "status": "DECLINED",
-  "amount": 12000.00,
-  "rulesTriggered": ["HIGH_RISK_CATEGORY"],
-  "createdAt": "2026-09-10T16:01:02Z"
-}
-```
-
-`FLAGGED` example:
+Success example (`DECLINED`):
 
 ```json
 {
-  "transactionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  "status": "FLAGGED",
-  "amount": 6200.00,
-  "rulesTriggered": ["NEW_USER_HIGH_AMOUNT"],
-  "createdAt": "2026-09-10T16:01:02Z"
+  "data": {
+    "transactionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "status": "DECLINED",
+    "amount": 12000.00,
+    "rulesTriggered": ["HIGH_RISK_CATEGORY"],
+    "createdAt": "2026-09-10T16:01:02Z"
+  },
+  "message": "Transaction processed",
+  "errors": [],
+  "meta": {
+    "requestId": "req_abc123"
+  }
 }
 ```
 
-`GET /api/v1/transactions/{id}` — fetch a stored decision (useful for idempotent clients and ops).
+Success example (`FLAGGED`):
+
+```json
+{
+  "data": {
+    "transactionId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "status": "FLAGGED",
+    "amount": 6200.00,
+    "rulesTriggered": ["NEW_USER_HIGH_AMOUNT"],
+    "createdAt": "2026-09-10T16:01:02Z"
+  },
+  "message": "Transaction processed",
+  "errors": [],
+  "meta": {
+    "requestId": "req_abc123"
+  }
+}
+```
+
+Validation error example:
+
+```json
+{
+  "data": null,
+  "message": "Validation failed",
+  "errors": [
+    {
+      "code": "VALIDATION_ERROR",
+      "field": "amount",
+      "message": "must be greater than 0"
+    }
+  ],
+  "meta": {
+    "requestId": "req_abc123"
+  }
+}
+```
+
+Infrastructure error example:
+
+```json
+{
+  "data": null,
+  "message": "Service temporarily unavailable",
+  "errors": [
+    {
+      "code": "SERVICE_UNAVAILABLE",
+      "field": null,
+      "message": "Unable to persist transaction"
+    }
+  ],
+  "meta": {
+    "requestId": "req_abc123"
+  }
+}
+```
+
+`GET /api/v1/transactions/{id}` — fetch a stored decision (useful for idempotent clients and ops). HTTP `200` + envelope with transaction in `data`, or `404` + `NOT_FOUND`.
 
 ### Infrastructure failure vs business decline
 
@@ -894,7 +1051,7 @@ A DECLINE rule triggered
         ↓
 Transaction persisted as DECLINED
         ↓
-201 + status DECLINED
+201 + ApiResponse.data.status = DECLINED  (errors = [])
 ```
 
 **Infrastructure failure**
@@ -904,7 +1061,7 @@ PostgreSQL unavailable or commit fails
         ↓
 Transaction could not be safely evaluated/persisted
         ↓
-503 Service Unavailable
+503 + ApiResponse.data = null, errors = [SERVICE_UNAVAILABLE]
 ```
 
 `DECLINED` = the business rejected the transaction. `503` = the system could not safely reach or durably store a business decision. Never fabricate a fraud decline for an infrastructure outage.
@@ -912,14 +1069,16 @@ Transaction could not be safely evaluated/persisted
 ### Users
 
 
-| Method  | Path                 | Purpose                                         |
-| ------- | -------------------- | ----------------------------------------------- |
-| `POST`  | `/api/v1/users`      | Create user (sets `createdAt`)                  |
-| `GET`   | `/api/v1/users/{id}` | Query profile                                   |
-| `PATCH` | `/api/v1/users/{id}` | Update KYC and/or `preApprovedTransactionLimit` |
+| Method  | Path                 | HTTP success | Purpose                                         |
+| ------- | -------------------- | ------------ | ----------------------------------------------- |
+| `POST`  | `/api/v1/users`      | `201`        | Create user (sets `createdAt`)                  |
+| `GET`   | `/api/v1/users/{id}` | `200`        | Query profile                                   |
+| `PATCH` | `/api/v1/users/{id}` | `200`        | Update KYC and/or `preApprovedTransactionLimit` |
 
 
 Create body: `{ "email", "kycStatus"? }`. Default KYC `PENDING`, `preApprovedTransactionLimit` null.
+
+All user endpoints use the same `ApiResponse` envelope (`data` = user resource on success).
 
 ### Idempotency
 
@@ -929,8 +1088,8 @@ Do **not** compare raw JSON strings. Store a deterministic request fingerprint f
 SHA-256(canonical(userId, merchantId, amount, category))
 ```
 
-| Same key + same fingerprint | Return original transaction |
-| Same key + different fingerprint | `409 Conflict` |
+| Same key + same fingerprint | Return original transaction (`201` + same `data`) |
+| Same key + different fingerprint | `409` + `IDEMPOTENCY_CONFLICT` |
 
 Application checks (before and after acquiring the user lock) provide friendly handling. The unique DB constraint is the final correctness guarantee:
 
@@ -961,12 +1120,26 @@ Recommended sequence:
 **Choice:** In-process strategy objects behind `FraudEngine`. One class per rule; interface only — no unnecessary abstract base classes.
 
 
-| Option                            | Pros                                    | Cons                                      |
-| --------------------------------- | --------------------------------------- | ----------------------------------------- |
-| `if`/`else` in the service        | Fast to write                           | Untestable in isolation; composition bugs |
-| Rules engine (Drools, etc.)       | Hot-reload policies                     | Heavy for four static rules               |
-| **Java** `FraudRule` **+ engine** | Unit-testable, explicit, easy to extend | Code change to add a rule                 |
+| Option                             | Pros                                    | Cons                                      |
+| ---------------------------------- | --------------------------------------- | ----------------------------------------- |
+| `if`/`else` in the command handler | Fast to write                           | Untestable in isolation; composition bugs |
+| Rules engine (Drools, etc.)        | Hot-reload policies                     | Heavy for four static rules               |
+| **Java** `FraudRule` **+ engine**  | Unit-testable, explicit, easy to extend | Code change to add a rule                 |
 
+
+
+### 9.1.1 CQRS-lite (commands vs queries)
+
+**Choice:** Application-level CQRS-lite — separate command and query handlers, **same** PostgreSQL (and Mongo audit projection). No separate read DB, no mediator framework.
+
+
+| Option | Pros | Cons |
+| ------ | ---- | ---- |
+| Single `UserService` / `TransactionService` | Familiar, fewer types | Read and write concerns grow tangled |
+| Full CQRS (separate read DB / projections) | Independent read scale | Far too heavy for this challenge; breaks simple `FOR UPDATE` story |
+| **CQRS-lite handlers** | Clear write vs read boundaries; query side ready for cache/replica later | Slightly more packages |
+
+**Authorize path stays strongly consistent:** `ProcessTransactionHandler` loads the user with `SELECT … FOR UPDATE` on the primary inside its transaction. It does **not** call `GetUserHandler` or a cache. Optional caching applies only to query handlers (`GetUserHandler`), with invalidation on `UpdateUserHandler`.
 
 
 
@@ -1100,7 +1273,48 @@ flowchart TD
 
 ## 11. Observability
 
-Structured logs (JSON via Logback), fields: `requestId`, `transactionId`, `status`, `rulesTriggered`, `durationMs`. Log user identifiers only per privacy policy. Do **not** log credentials, tokens, or full sensitive financial information.
+### Structured logging (SLF4J + Logback)
+
+**Requirement:** SLF4J API + Logback implementation. **Never** `System.out.println` / `System.err.println`.
+
+All application classes obtain loggers through a single factory so usage stays consistent and easy to review:
+
+```text
+common/logging/LogFactory.java
+```
+
+```java
+package com.example.payment.common.logging;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public final class LogFactory {
+
+    private LogFactory() {}
+
+    public static Logger getLogger(Class<?> type) {
+        return LoggerFactory.getLogger(type);
+    }
+}
+```
+
+Usage in every class:
+
+```java
+private static final Logger log = LogFactory.getLogger(ProcessTransactionHandler.class);
+
+log.info("transaction.processed status={} transactionId={} durationMs={}",
+        status, transactionId, durationMs);
+```
+
+**Conventions:**
+
+- One `static final Logger` per class via `LogFactory.getLogger(Class)`.
+- Prefer parameterized messages (`{}`), not string concatenation.
+- JSON layout via Logback (e.g. Logstash encoder); include MDC fields where useful: `requestId`, `transactionId`, `userId` (privacy permitting), `status`, `rulesTriggered`, `durationMs`.
+- Filter / interceptor sets `requestId` (from `X-Request-Id` or generated) into MDC at request start and clears it at end.
+- Do **not** log credentials, tokens, or full sensitive financial payloads.
 
 Metrics:
 
@@ -1146,7 +1360,7 @@ flowchart LR
 - App waits for PG via healthchecks, then **Liquibase** migrations, then starts.
 - Outbox publisher is a `@Scheduled` worker **inside** the app (safe across instances via `SKIP LOCKED`).
 
-**Out of scope for this challenge:** Kafka / Zookeeper / KRaft, Redis for velocity or distributed locks, microservices, Drools, event sourcing, separate fraud or audit services. PostgreSQL outbox + scheduled publisher is sufficient. Kafka could be introduced later for many downstream consumers; Redis would add consistency concerns without being necessary for Rule 2.
+**Out of scope for this challenge:** Kafka / Zookeeper / KRaft, Redis for velocity or distributed locks (optional read-through cache on `GetUserHandler` only is a later enhancement), microservices, Drools, event sourcing, separate fraud or audit services, separate read database for CQRS. PostgreSQL outbox + scheduled publisher is sufficient. Kafka could be introduced later for many downstream consumers; Redis on the authorize path would add consistency concerns without being necessary for Rule 2.
 
 ---
 
@@ -1157,13 +1371,14 @@ flowchart LR
 Use **Testcontainers** (PostgreSQL + MongoDB), not H2 — the design depends on `FOR UPDATE`, `SKIP LOCKED`, partial indexes, and `TIMESTAMPTZ`.
 
 
-| Layer   | What                                                                                                                                                                  | How                                |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Domain  | Each `FraudRule`; aggregation (no rules → APPROVED, FLAG only, DECLINE only, FLAG+DECLINE → DECLINED, multiple DECLINEs); Rule 2 inclusive 60s edge; Rule 4 age edges | JUnit 5, fixed `Clock`, no Spring  |
-| Service | Lock → re-check idempotency → engine → persist outbox; `503` on PG failure; fingerprint conflict                                                                      | Mockito on repositories / out-ports |
-| Data    | Unique idempotency, velocity query, outbox insert with txn rollback                                                                                                   | Testcontainers PostgreSQL          |
-| Audit   | Insert + DuplicateKey = already delivered; Mongo outage → PENDING → recover → PUBLISHED                                                                               | Testcontainers Mongo (+ PG)        |
-| API     | `201` (all statuses) / `404` / `409` / `503`                                                                                                                          | `@SpringBootTest` + Testcontainers |
+| Layer   | What                                                                                                                                                                  | How                                 |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Domain  | Each `FraudRule`; aggregation (no rules → APPROVED, FLAG only, DECLINE only, FLAG+DECLINE → DECLINED, multiple DECLINEs); Rule 2 inclusive 60s edge; Rule 4 age edges | JUnit 5, fixed `Clock`, no Spring   |
+| Command | Lock → re-check idempotency → engine → persist outbox; `503` on PG failure; fingerprint conflict                                                                      | Mockito on repositories / out-ports |
+| Query   | `GetUser` / `GetTransaction` return stored views; 404 when missing                                                                                                    | Mockito or `@DataJpaTest`           |
+| Data    | Unique idempotency, velocity query, outbox insert with txn rollback                                                                                                   | Testcontainers PostgreSQL           |
+| Audit   | Insert + DuplicateKey = already delivered; Mongo outage → PENDING → recover → PUBLISHED                                                                               | Testcontainers Mongo (+ PG)         |
+| API     | Envelope on all statuses; `201` (APPROVED/FLAGGED/DECLINED) / `404` / `409` / `503`; validation `errors[]`                                 | `@SpringBootTest` + Testcontainers  |
 
 
 
@@ -1238,6 +1453,8 @@ Designed as additive; not required for the core path.
 - **Overwrite Mongo audit documents** (upsert rewriting history).
 - **Terminal outbox** `FAILED` **that silently stops delivery.**
 - **Kafka, Redis distributed locks, Drools, microservices, event sourcing** for this challenge size.
+- **Caching the authorize-path user load** (or routing it through `GetUserHandler`) — Rule 2 requires `SELECT … FOR UPDATE` on the primary.
+- **A separate read database for CQRS** — CQRS-lite is application-level only.
 - **Global synchronized lock** or raising the whole DB to `SERIALIZABLE`.
 - **A separate microservice per rule.**
 
@@ -1251,10 +1468,10 @@ Aligned with the challenge’s suggested order:
 
 1. Docker Compose + Liquibase schema (users, transactions, outbox) + Mongo collection.
 2. Domain model + `FraudEngine` and four rules with unit tests (including aggregation and time boundaries).
-3. `TransactionService` with `SELECT … FOR UPDATE`, double idempotency check, and outbox write inside one PG transaction.
-4. User APIs (`preApprovedTransactionLimit`, KYC).
+3. `ProcessTransactionHandler` with `SELECT … FOR UPDATE`, double idempotency check, and outbox write inside one PG transaction.
+4. User command/query handlers (`CreateUser`, `UpdateUser` for `preApprovedTransactionLimit`/KYC, `GetUser`).
 5. Outbox publisher (`SKIP LOCKED`, insert-or-duplicate-key, exponential backoff) + Mongo.
-6. API layer (`201` for all business statuses, `503` for PG failures), OpenAPI, structured logging, metrics.
+6. API layer (`ApiResponse` envelope, `201` for all business statuses, `503` for PG failures), OpenAPI, structured logging via `LogFactory` + Logback JSON, metrics.
 7. Integration tests (Testcontainers), JaCoCo, README (include the core guarantee and Mongo justification).
 
 This order keeps the fraud policy correct before HTTP and storage adapters accumulate around it.
