@@ -62,7 +62,37 @@ Open [`bruno/`](bruno/) in [Bruno](https://www.usebruno.com/) (YAML / OpenCollec
 
 ```bash
 cd bruno && npx @usebruno/cli run health --env Local
+cd bruno && npx @usebruno/cli run user --env Local
 ```
+
+## Users API (Phase 1)
+
+Base path: `/api/v1/users`. Responses use the `ApiResponse` envelope (`data`, `message`, `errors[]`, `meta.requestId`).
+
+```bash
+# Create (KYC defaults to PENDING; preApprovedTransactionLimit is null)
+curl -s -X POST http://localhost:8080/api/v1/users \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice@example.com"}'
+
+# Get
+curl -s http://localhost:8080/api/v1/users/<userId>
+
+# Patch KYC and/or pre-approved limit (needed later for fraud Rule 1)
+curl -s -X PATCH http://localhost:8080/api/v1/users/<userId> \
+  -H 'Content-Type: application/json' \
+  -d '{"kycStatus":"VERIFIED","preApprovedTransactionLimit":15000}'
+```
+
+| Method | Path | Success | Notes |
+| ------ | ---- | ------- | ----- |
+| `POST` | `/api/v1/users` | `201` | Body: `{ "email", "kycStatus"? }` |
+| `GET` | `/api/v1/users/{id}` | `200` | `404` + `USER_NOT_FOUND` if missing |
+| `PATCH` | `/api/v1/users/{id}` | `200` | Partial update of KYC and/or limit |
+| `POST` duplicate email | | `409` | `EMAIL_ALREADY_EXISTS` |
+| Invalid body | | `400` | `VALIDATION_ERROR` (+ `field` when known) |
+
+**Validation:** Bean Validation on request DTOs (`@Valid`) for formats/ranges; handlers enforce business rules (duplicate email, missing user, non-HTTP callers). See `docs/low-level-design.md` — *Request validation (layered)*.
 
 ## Local Maven build
 

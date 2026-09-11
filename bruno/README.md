@@ -53,6 +53,8 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/actuator/promethe
 
 Each request has **docs** (contract) and **runtime tests** (status + envelope).
 
+Invalid bodies should return **HTTP 400** with `errors[].code = VALIDATION_ERROR` (and `field` when known). See LLD *Request validation (layered)*: Bean Validation on DTOs + business guards in handlers.
+
 ## Variables
 
 | Var | Set by |

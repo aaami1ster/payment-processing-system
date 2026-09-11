@@ -85,8 +85,8 @@ docs: |-
   ## Errors
   | HTTP | `errors[].code` | When |
   | ---- | --------------- | ---- |
-  | `400` | `VALIDATION_ERROR` | Bad/missing fields |
-  | `409` | (duplicate email) | Email already exists |
+  | `400` | `VALIDATION_ERROR` | Bad/missing fields (Bean Validation on DTO) |
+  | `409` | `EMAIL_ALREADY_EXISTS` | Email already exists |
 
   ## Side effects
   Sets env `userId` for later requests.

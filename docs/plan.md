@@ -33,6 +33,7 @@ Persistence unavailable → 503 — never fabricate a business decision
 | Stack            | Java 21+, Spring Boot **4.1.1** (prefer 3.x; see note), Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo |
 | Logging          | SLF4J + Logback via `LogFactory` only — never `System.out`                                        |
 | Manual API tests | Bruno collection in [`bruno/`](bruno/)                                                            |
+| Request validation | Bean Validation on API DTOs + business guards in CQRS handlers (see LLD) |
 | Security scan    | [`check-security-docker-scout.sh`](../scripts/check-security-docker-scout.sh) + [`check-security-owasp.sh`](../scripts/check-security-owasp.sh) |
 
 
@@ -267,6 +268,7 @@ Fix only Phase 0 gaps; do not start Phase 1.
 - Postgres entity/repository; `CreateUserHandler`, `GetUserHandler`, `UpdateUserHandler`
 - REST: `POST /api/v1/users`, `GET /api/v1/users/{id}`, `PATCH /api/v1/users/{id}`
 - Standard `ApiResponse` envelope + `GlobalExceptionHandler` (at least for users)
+- Layered input validation: Bean Validation on request DTOs + business guards in handlers
 - Unit/API tests for create/get/update + 404
 
 **Documentation:** README API section for user endpoints (examples). Bruno `bruno/user/` docs stay in sync with the envelope.
@@ -290,23 +292,23 @@ cd bruno && npx @usebruno/cli run user --env Local
 
 ### Tasks
 
-- [ ] **T1.1 — User domain + persistence**  
+- [x] **T1.1 — User domain + persistence**  
   **Description:** `User`, `KycStatus`; JPA entity/repo matching Liquibase.  
   **Acceptance:** Can save/load user with email unique, KYC default PENDING, null limit.
 
-- [ ] **T1.2 — User command/query handlers**  
+- [x] **T1.2 — User command/query handlers**  
   **Description:** Create / Get / Update (KYC + `preApprovedTransactionLimit`).  
   **Acceptance:** Update is partial; unknown id → domain not-found; no fraud logic here.
 
-- [ ] **T1.3 — User REST + ApiResponse envelope**  
-  **Description:** Controllers return `ResponseEntity<ApiResponse<T>>`; errors use `errors[]` codes.  
-  **Acceptance:** 201 create, 200 get/patch, 404 `USER_NOT_FOUND`/`NOT_FOUND`; envelope matches LLD.
+- [x] **T1.3 — User REST + ApiResponse envelope**  
+  **Description:** Controllers return `ResponseEntity<ApiResponse<T>>`; errors use `errors[]` codes; `@Valid` on request DTOs.  
+  **Acceptance:** 201 create, 200 get/patch, 404 `USER_NOT_FOUND`/`NOT_FOUND`; envelope matches LLD; invalid body → 400 `VALIDATION_ERROR`.
 
-- [ ] **T1.4 — User tests + README examples**  
+- [x] **T1.4 — User tests + README examples**  
   **Description:** Tests for happy path + duplicate email + 404; README curl examples.  
   **Acceptance:** Tests green; README examples match running API.
 
-- [ ] **T1.5 — Bruno user collection**  
+- [x] **T1.5 — Bruno user collection**  
   **Description:** Ensure `bruno/user/` requests match live paths/body/error codes; create sets `userId` for later phases.  
   **Acceptance:** `bru run user --env Local` green (create → get → patch → not-found).
 
@@ -329,9 +331,10 @@ Implement:
 2. Postgres mapping + repository.
 3. CreateUserHandler, GetUserHandler, UpdateUserHandler (PATCH KYC and/or preApprovedTransactionLimit).
 4. REST under /api/v1/users with ApiResponse / ApiError / ApiMeta and GlobalExceptionHandler.
-5. Default KYC PENDING; preApprovedTransactionLimit null on create.
-6. Tests + README curl examples for users.
-7. Align/verify Bruno `bruno/user/` (docs + tests) with the live API; create request must set env userId.
+5. Bean Validation on request DTOs (@Valid); business guards in handlers (duplicate email, etc.).
+6. Default KYC PENDING; preApprovedTransactionLimit null on create.
+7. Tests + README curl examples for users.
+8. Align/verify Bruno `bruno/user/` (docs + tests) with the live API; create request must set env userId.
 
 Do NOT implement transaction processing or fraud engine yet.
 Logging only via LogFactory.
@@ -348,10 +351,11 @@ Validate Phase 1 against plan.md and LLD user/API sections.
 Verify:
 1. POST/GET/PATCH /api/v1/users behave as designed with ApiResponse envelope.
 2. Duplicate email rejected; unknown user → 404 with stable error code.
-3. PATCH can raise preApprovedTransactionLimit (needed later for Rule 1).
-4. Tests pass; README examples work.
-5. Bruno user folder passes (create/get/patch/404).
-6. No transaction/fraud code required yet.
+3. Invalid create/patch bodies → 400 VALIDATION_ERROR with field when applicable.
+4. PATCH can raise preApprovedTransactionLimit (needed later for Rule 1).
+5. Tests pass; README examples work.
+6. Bruno user folder passes (create/get/patch/404).
+7. No transaction/fraud code required yet.
 
 Run Phase 1 exit demo. PASS/FAIL per T1.1–T1.5. Fix only Phase 1 gaps.
 
@@ -1109,6 +1113,7 @@ Hard rules:
 - Authorize path: SELECT user FOR UPDATE on primary; never Redis/GetUserHandler for that load.
 - Logging: LogFactory / SLF4J only — no System.out.
 - Prefer smallest change set; match existing packages and ApiResponse envelope.
+- Validate request DTOs with Bean Validation (`@Valid`); keep business invariants in CQRS handlers — do not duplicate the same check in both layers.
 - After implementation, run the phase exit demo and mark what was verified.
 ```
 
