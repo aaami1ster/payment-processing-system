@@ -23,7 +23,7 @@ cp .env.example .env   # first time only; .env is gitignored
 docker compose up --build -d
 ```
 
-Configuration lives in `.env` (images, ports, DB credentials, Mongo URI). See `.env.example`.
+Configuration lives in `.env` (ports, DB credentials, Mongo URI / `GLIBC_TUNABLES`). See `.env.example`.
 
 If you previously ran an older Postgres major (≤17) with this project, wipe volumes once so PG 18 can init a fresh data dir:
 
@@ -71,6 +71,18 @@ mvn -q -DskipTests package
 ```
 
 Requires PostgreSQL + Mongo reachable at the URLs in `src/main/resources/application.yml` (or override via env).
+
+## IntelliJ: debug with `.env`
+
+To load project `.env` variables when running/debugging the app from IntelliJ:
+
+1. **IntelliJ → Settings → Plugins**
+2. Search for **EnvFile** by **Borys Pierov**, install it, then **restart** the IDE
+3. Open the run/debug configuration for `PaymentProcessingApplication`
+4. Follow the plugin **Overview** steps to enable EnvFile and point it at the project root `.env` (copy from `.env.example` if needed)
+5. Start the configuration in **Debug** mode
+
+Ensure Postgres and Mongo are up (e.g. `docker compose up -d postgres mongo`) before debugging locally.
 
 ## Docs
 
