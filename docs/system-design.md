@@ -73,23 +73,23 @@ flowchart TB
     Client["API clients"]
 
     subgraph App["Payment Service (Spring Boot)"]
-        API["API layer<br/>REST controllers, validation, error mapping"]
-        AppSvc["Application layer<br/>TransactionService, UserService"]
-        Fraud["Fraud engine<br/>pluggable rules"]
-        Domain["Domain model<br/>User, Transaction, Decision, Audit"]
-        Infra["Infrastructure<br/>repos, outbox, resilience"]
+        API["API layer<br/>controllers, request/response, exception mapping"]
+        Svc["Service layer<br/>TransactionService, UserService"]
+        Domain["Domain<br/>User, Transaction, FraudEngine + rules"]
+        Data["Data layer<br/>Postgres, Mongo, outbox"]
+        Integ["Integration<br/>future external clients"]
     end
 
     PG[("PostgreSQL<br/>users, transactions, outbox")]
     Mongo[("MongoDB<br/>audit logs")]
 
     Client --> API
-    API --> AppSvc
-    AppSvc --> Fraud
-    AppSvc --> Domain
-    AppSvc --> Infra
-    Infra --> PG
-    Infra --> Mongo
+    API --> Svc
+    Svc --> Domain
+    Svc --> Data
+    Svc --> Integ
+    Data --> PG
+    Data --> Mongo
 ```
 
 
@@ -101,10 +101,11 @@ flowchart TB
 
 | Component               | Responsibility                                                                                                                                  |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **API layer**           | HTTP contracts, request validation, status-code mapping, OpenAPI. No business rules.                                                            |
-| **Transaction service** | Orchestrates one payment: idempotency, per-user row lock, load user, run fraud, persist transaction + outbox, return decision **after commit**. |
-| **User service**        | Create / read / update user profiles used by fraud (KYC, created-at, pre-approved limit).                                                       |
-| **Fraud engine**        | Evaluates all `FraudRule` implementations against a `FraudContext`. Returns a `FraudDecision`.                                                  |
+| **API layer**           | HTTP contracts, request/response DTOs, status-code mapping, OpenAPI. No business rules.                                                         |
+| **Service layer**       | Orchestrates use cases: idempotency, locking, load data, call domain, persist, return result **after commit**.                                  |
+| **Domain**              | Business concepts and policies (`User`, `Transaction`, `FraudEngine` / rules). No HTTP, JPA, or Mongo types.                                    |
+| **Data layer**          | Database-specific entities, repositories, and outbox publisher.                                                                                 |
+| **Integration**         | Outbound third-party clients (empty until needed; e.g. webhooks).                                                                               |
 | **PostgreSQL**          | Source of truth for users and transactions. Also holds the audit **outbox** so nothing is lost if Mongo is down.                                |
 | **MongoDB**             | Query-optimized, append-only audit collection. Eventually consistent with PostgreSQL.                                                           |
 | **Outbox publisher**    | Background worker that ships committed outbox rows to Mongo and retries on failure (`FOR UPDATE SKIP LOCKED`).                                  |
@@ -121,33 +122,175 @@ PostgreSQL is the **system of record**. MongoDB is an **audit projection**. A de
 
 ## 3. Layered Design (Inside the Service)
 
-Pragmatic ports-and-adapters layout. Interfaces exist where they protect boundaries — not for every class.
+Layered packages sized for this challenge: easy to review, conventional Spring layout, and clear answers to “where does X live?” Interfaces exist where they protect boundaries — especially replaceable or failure-prone adapters (e.g. audit publish) — not for every class.
 
 ```
-com.paymentprocessing
+com.example.payment
+│
 ├── api
 │   ├── controller
-│   ├── dto
-│   └── error
-├── application
-│   ├── service          # TransactionService, UserService
-│   └── port
-│       ├── in
-│       └── out
+│   ├── request
+│   ├── response
+│   └── exception
+│
+├── service
+│   ├── TransactionService.java
+│   ├── UserService.java
+│   └── mapper
+│
 ├── domain
-│   ├── model            # User, Transaction, Category, KycStatus, …
+│   ├── transaction
+│   │   ├── Transaction.java
+│   │   └── TransactionStatus.java
+│   │
+│   ├── user
+│   │   ├── User.java
+│   │   └── KycStatus.java
+│   │
 │   └── fraud
-│       └── rules        # one class per rule
-├── infrastructure
+│       ├── FraudEngine.java
+│       ├── FraudRule.java
+│       ├── FraudContext.java
+│       ├── FraudDecision.java
+│       ├── RuleResult.java
+│       ├── RuleId.java
+│       ├── Severity.java
+│       ├── Category.java
+│       └── rule
+│           ├── AmountWithoutApprovalRule.java
+│           ├── VelocityRule.java
+│           ├── HighRiskCategoryRule.java
+│           └── NewUserHighAmountRule.java
+│
+├── data
 │   ├── postgres
+│   │   ├── entity
+│   │   └── repository
+│   │
 │   ├── mongo
+│   │   ├── document
+│   │   └── repository
+│   │
 │   └── outbox
-└── config
+│       └── OutboxPublisher.java
+│
+├── integration
+│   └── [future external clients]
+│
+├── config
+│   ├── ClockConfig.java
+│   ├── FraudProperties.java
+│   └── OpenApiConfig.java
+│
+└── common
+    ├── exception
+    └── util
 ```
 
-**Dependency rule:** `api` → `application` → `domain`. `infrastructure` implements ports defined in `application`/`domain`. Domain has no Spring or JDBC types.
+### Why this organization
 
-Fraud rules are unit-testable with plain objects. Controllers stay free of persistence and locking details. Prefer interfaces over inheritance; do not introduce abstract base classes unless subclasses share real invariant behavior.
+| Package | Answers | Contains |
+| ------- | ------- | -------- |
+| `api` | How do clients talk to us? | Controllers, request/response DTOs, HTTP exception mapping |
+| `service` | In what order do we complete a use case? | Orchestration: locks, repositories, domain calls, persistence |
+| `domain` | What are the business concepts and rules? | Models, enums, fraud engine and rules |
+| `data` | How do we store and retrieve state? | Postgres/Mongo entities, repositories, outbox |
+| `integration` | How do we talk to systems we don’t own? | External clients (webhooks, etc.) when needed |
+| `config` | How is the framework wired? | Spring beans, typed properties, OpenAPI |
+| `common` | What is truly cross-cutting? | Shared exceptions/utils — **not** business enums |
+
+Business enums (`TransactionStatus`, `KycStatus`, `Category`, …) live next to their domain, not in a generic `constants` package. Thresholds and toggles live in `config` (`FraudProperties`), not scattered magic numbers.
+
+**Dependency rule:** `api` → `service` → `domain`. `service` depends on `data` / `integration` for I/O (or on narrow out-port interfaces implemented there). `domain` has no Spring, JDBC, or Mongo types. Prefer interfaces over inheritance; do not introduce abstract base classes unless subclasses share real invariant behavior.
+
+### Why separate `service` and `domain` (orchestration)
+
+They answer different questions:
+
+- **`domain`** — *What* are the business concepts and rules?
+- **`service`** — *In what order* do we coordinate those rules, repositories, locks, and integrations to finish a use case?
+
+That coordination is **orchestration**.
+
+Domain logic is policy, for example:
+
+```text
+if recentTransactionCount >= 3 → DECLINED
+if highRiskCategory && amount > 5000 → DECLINED
+```
+
+Those rules must not know HTTP, JPA, Mongo, row locks, `@Transactional`, or repositories. They live under `domain/fraud`.
+
+`TransactionService` coordinates the use case:
+
+```text
+check idempotency
+    ↓
+lock user row
+    ↓
+load user
+    ↓
+count recent transactions
+    ↓
+call FraudEngine
+    ↓
+create transaction
+    ↓
+save transaction
+    ↓
+save audit outbox
+    ↓
+return result
+```
+
+Simplified shape:
+
+```java
+@Service
+public class TransactionService {
+
+    private final UserRepository userRepository;
+    private final TransactionRepository transactionRepository;
+    private final FraudEngine fraudEngine;
+    private final AuditOutboxRepository outboxRepository;
+
+    @Transactional
+    public TransactionResult process(ProcessTransactionCommand command) {
+        User user = userRepository
+                .findByIdForUpdate(command.userId())
+                .orElseThrow(UserNotFoundException::new);
+
+        long recentCount = transactionRepository.countRecentSuccessful(...);
+
+        FraudContext context = new FraudContext(
+                user, command.amount(), command.category(), recentCount);
+
+        FraudDecision decision = fraudEngine.evaluate(context);
+
+        Transaction transaction = Transaction.create(command, decision);
+        transactionRepository.save(transaction);
+        outboxRepository.save(AuditEvent.from(transaction, user, decision));
+
+        return TransactionResult.from(transaction);
+    }
+}
+```
+
+The service does **not** decide “amount > 5000 means X.” It gathers data, asks the domain to decide, then persists. Analogy: `TransactionService` is the conductor; `FraudRule` classes are the performers; repositories are persistence collaborators.
+
+**Change isolation:**
+
+| Change | Touch |
+| ------ | ----- |
+| Rule 2 threshold 3 → 5 | `VelocityRule` (+ its unit tests) |
+| Audit sync to Postgres instead of Mongo/outbox | Orchestration / `data` path |
+| HTTP status mapping | `api` only |
+
+Fraud rules stay unit-testable with plain objects and a fixed `Clock` — no Spring context, no database, no mocks of persistence.
+
+### Scale note
+
+For a much larger system, package-by-feature (`transaction/`, `user/`, `audit/`, each with its own api/service/data) can scale better. For this coding challenge, layered packages are easier to review and entirely appropriate.
 
 ---
 
@@ -1011,13 +1154,13 @@ flowchart LR
 Use **Testcontainers** (PostgreSQL + MongoDB), not H2 — the design depends on `FOR UPDATE`, `SKIP LOCKED`, partial indexes, and `TIMESTAMPTZ`.
 
 
-| Layer       | What                                                                                                                                                                  | How                                |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Domain      | Each `FraudRule`; aggregation (no rules → APPROVED, FLAG only, DECLINE only, FLAG+DECLINE → DECLINED, multiple DECLINEs); Rule 2 inclusive 60s edge; Rule 4 age edges | JUnit 5, fixed `Clock`, no Spring  |
-| Application | Lock → re-check idempotency → engine → persist outbox; `503` on PG failure; fingerprint conflict                                                                      | Mockito on ports                   |
-| Persistence | Unique idempotency, velocity query, outbox insert with txn rollback                                                                                                   | Testcontainers PostgreSQL          |
-| Audit       | Insert + DuplicateKey = already delivered; Mongo outage → PENDING → recover → PUBLISHED                                                                               | Testcontainers Mongo (+ PG)        |
-| API         | `201` (all statuses) / `404` / `409` / `503`                                                                                                                          | `@SpringBootTest` + Testcontainers |
+| Layer   | What                                                                                                                                                                  | How                                |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Domain  | Each `FraudRule`; aggregation (no rules → APPROVED, FLAG only, DECLINE only, FLAG+DECLINE → DECLINED, multiple DECLINEs); Rule 2 inclusive 60s edge; Rule 4 age edges | JUnit 5, fixed `Clock`, no Spring  |
+| Service | Lock → re-check idempotency → engine → persist outbox; `503` on PG failure; fingerprint conflict                                                                      | Mockito on repositories / out-ports |
+| Data    | Unique idempotency, velocity query, outbox insert with txn rollback                                                                                                   | Testcontainers PostgreSQL          |
+| Audit   | Insert + DuplicateKey = already delivered; Mongo outage → PENDING → recover → PUBLISHED                                                                               | Testcontainers Mongo (+ PG)        |
+| API     | `201` (all statuses) / `404` / `409` / `503`                                                                                                                          | `@SpringBootTest` + Testcontainers |
 
 
 
