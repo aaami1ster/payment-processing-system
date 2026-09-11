@@ -1,0 +1,9 @@
+info:
+  name: Health
+  type: folder
+  seq: 1
+
+docs: |-
+  # Health (Phase 0)
+
+  Spring Actuator endpoints. Readiness requires PostgreSQL; Mongo down still allows READY.

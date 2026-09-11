@@ -1,0 +1,79 @@
+info:
+  name: Process transaction high amount decline
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/transactions"
+  headers:
+    - name: Idempotency-Key
+      value: "{{idempotencyKeyDecline}}"
+  body:
+    type: json
+    data: |-
+      {
+        "amount": 12000.00,
+        "userId": "{{declineUserId}}",
+        "merchantId": "{{merchantId}}",
+        "category": "GROCERY"
+      }
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        bru.setEnvVar("idempotencyKeyDecline", "idem-decline-" + Date.now());
+        // Fresh user with null limit so Rule 1 DECLINEs 12000
+        const createRes = await bru.sendRequest({
+          method: "POST",
+          url: bru.getEnvVar("baseUrl") + "/api/v1/users",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          data: {
+            email: "decline+" + Date.now() + "@example.com"
+          }
+        });
+        if (createRes.status !== 201 || !createRes.data || !createRes.data.data) {
+          throw new Error("Failed to create decline-test user: HTTP " + createRes.status);
+        }
+        const id = createRes.data.data.id || createRes.data.data.userId;
+        bru.setEnvVar("declineUserId", id);
+    - type: tests
+      code: |-
+        test("HTTP 201 even when business DECLINED", function() {
+          expect(res.status).to.equal(201);
+        });
+
+        test("data.status is DECLINED", function() {
+          expect(res.body.data.status).to.equal("DECLINED");
+          expect(res.body.errors).to.be.an("array").that.is.empty;
+        });
+
+        test("rulesTriggered is non-empty", function() {
+          expect(res.body.data.rulesTriggered).to.be.an("array").that.is.not.empty;
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # POST /api/v1/transactions — Rule 1 decline demo
+
+  Amount `12000` without a sufficient `preApprovedTransactionLimit` → **DECLINED**
+  (still HTTP **201** — business rejection, not API failure).
+
+  Creates a fresh user (no limit) in the before-request script so prior PATCH limit does not interfere.
+
+  ## When available
+  Phase 3+
+
+  ## Expected
+  - **HTTP** `201`
+  - `data.status` = `DECLINED`
+  - `errors` = `[]`

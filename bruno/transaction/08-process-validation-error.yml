@@ -1,0 +1,50 @@
+info:
+  name: Process validation error
+  type: http
+  seq: 8
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/v1/transactions"
+  body:
+    type: json
+    data: |-
+      {
+        "amount": -1,
+        "userId": "{{userId}}",
+        "merchantId": "{{merchantId}}",
+        "category": "GROCERY"
+      }
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("HTTP 400", function() {
+          expect(res.status).to.equal(400);
+        });
+
+        test("VALIDATION_ERROR in errors", function() {
+          expect(res.body.data).to.equal(null);
+          expect(res.body.errors).to.be.an("array").that.is.not.empty;
+          expect(res.body.errors.some(e => e.code === "VALIDATION_ERROR")).to.equal(true);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # POST /api/v1/transactions — validation error
+
+  Negative amount → `400` with field-level `VALIDATION_ERROR`.
+
+  ## When available
+  Phase 3+
+
+  ## Expected
+  - **HTTP** `400`
+  - `data` = `null`
+  - `errors[]` with `code: VALIDATION_ERROR`

@@ -27,6 +27,14 @@ Persistence unavailable → no business decision acknowledged → 503 Service Un
 
 The original challenge statement is in [Payment_Processing_Code_Challenge.md](Payment_Processing_Code_Challenge.md).
 
+## Implementation plan
+
+Phased build order, deliverables, checkboxes, and copy-paste AI prompts: [../plan.md](../plan.md).
+
+## API testing (Bruno)
+
+Runnable HTTP collection (docs + tests per endpoint): [../bruno/README.md](../bruno/README.md).
+
 ## Project identity
 
 | Item | Value |

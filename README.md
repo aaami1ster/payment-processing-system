@@ -1,0 +1,108 @@
+# Payment Processing System
+
+Spring Boot **4.1.1** payment service with fraud detection (challenge MVP; Boot 4 only because Spring Framework High/Critical CVEs have no OSS 6.2.x fix — see `docs/plan.md`). Design docs live in [`docs/`](docs/).
+
+## Prerequisites
+
+- Java 21+
+- Maven 3.9+
+- Docker + Docker Compose
+
+## Runtime stack (Compose)
+
+| Service | Image |
+| ------- | ----- |
+| App | built from `Dockerfile` (Temurin 21) |
+| PostgreSQL | `postgres:18-alpine` |
+| MongoDB | `mongo:8` (official image; no alpine tag) |
+
+## Run with Docker Compose
+
+```bash
+cp .env.example .env   # first time only; .env is gitignored
+docker compose up --build -d
+```
+
+Configuration lives in `.env` (ports, DB credentials, Mongo URI / `GLIBC_TUNABLES`). See `.env.example`.
+
+If you previously ran an older Postgres major (≤17) with this project, wipe volumes once so PG 18 can init a fresh data dir:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
+Wait until the app is healthy, then check (port from `APP_PORT`, default `8080`):
+
+```bash
+curl -s http://localhost:8080/actuator/health
+curl -s http://localhost:8080/actuator/health/liveness
+curl -s http://localhost:8080/actuator/health/readiness
+```
+
+Expect `"status":"UP"`. Readiness requires PostgreSQL; MongoDB can be down without failing readiness (app still waits for a healthy Mongo on first compose start).
+
+Verify Liquibase tables:
+
+```bash
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\dt'
+# or defaults: -U payments -d payments
+# expect: users, transactions, audit_outbox (+ Liquibase tables)
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+## Manual API tests (Bruno)
+
+Open [`bruno/`](bruno/) in [Bruno](https://www.usebruno.com/) (YAML / OpenCollection) with env **Local**, or:
+
+```bash
+cd bruno && npx @usebruno/cli run health --env Local
+```
+
+## Local Maven build
+
+```bash
+mvn -q -DskipTests package
+```
+
+Requires PostgreSQL + Mongo reachable at the URLs in `src/main/resources/application.yml` (or override via env).
+
+## Security vulnerability scan
+
+Run after each phase (and before marking validation done):
+
+```bash
+./scripts/check-security-docker-scout.sh   # fast (Docker Scout; docker login once)
+BUILD_APP_IMAGE=1 ./scripts/check-security-docker-scout.sh  # rebuild app then scan
+./scripts/check-security-owasp.sh          # Maven deps (OWASP; needs NVD_API_KEY in .env)
+# or:
+./scripts/check-security-vulnerabilities.sh
+```
+
+Gate = project sources + app image (Temurin base ignored by default). Official `postgres`/`mongo` images are scanned as warnings (`FAIL_ON_VENDOR=1` to enforce). Set `NVD_API_KEY` in `.env` (see `.env.example`). Reports: `target/security/scout/` and `target/security/owasp/`.
+
+## IntelliJ: debug with `.env`
+
+To load project `.env` variables when running/debugging the app from IntelliJ:
+
+1. **IntelliJ → Settings → Plugins**
+2. Search for **EnvFile** by **Borys Pierov**, install it, then **restart** the IDE
+3. Open the run/debug configuration for `PaymentProcessingApplication`
+4. Follow the plugin **Overview** steps to enable EnvFile and point it at the project root `.env` (copy from `.env.example` if needed)
+5. Start the configuration in **Debug** mode
+
+Ensure Postgres and Mongo are up (e.g. `docker compose up -d postgres mongo`) before debugging locally.
+
+## Docs
+
+| Doc | Purpose |
+| --- | ------- |
+| [docs/README.md](docs/README.md) | Design index |
+| [docs/plan.md](docs/plan.md) | Phased implementation plan |
+| [docs/high-level-design.md](docs/high-level-design.md) | Architecture |
+| [docs/low-level-design.md](docs/low-level-design.md) | Schema, API, fraud rules |
