@@ -2,22 +2,15 @@ name: Local
 variables:
   - name: baseUrl
     value: http://localhost:8080
-    enabled: true
   - name: userId
     value: ""
-    enabled: true
   - name: transactionId
     value: ""
-    enabled: true
   - name: idempotencyKey
     value: ""
-    enabled: true
   - name: merchantId
     value: mch_bruno_demo
-    enabled: true
   - name: sampleEmail
-    value: alice.bruno@example.com
-    enabled: true
+    value: alice.bruno+1789157423834@example.com
   - name: declineUserId
     value: ""
-    enabled: true
