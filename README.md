@@ -87,10 +87,16 @@ curl -s -X PATCH http://localhost:8080/api/v1/users/<userId> \
 | Method | Path | Success | Notes |
 | ------ | ---- | ------- | ----- |
 | `POST` | `/api/v1/users` | `201` | Body: `{ "email", "kycStatus"? }` |
+| `GET` | `/api/v1/users` | `200` | Cursor page: `items`, `nextCursor`, `hasMore` (`limit`, `cursor`, optional `kycStatus`) |
 | `GET` | `/api/v1/users/{id}` | `200` | `404` + `USER_NOT_FOUND` if missing |
 | `PATCH` | `/api/v1/users/{id}` | `200` | Partial update of KYC and/or limit |
 | `POST` duplicate email | | `409` | `EMAIL_ALREADY_EXISTS` |
-| Invalid body | | `400` | `VALIDATION_ERROR` (+ `field` when known) |
+| Invalid body / query | | `400` | `VALIDATION_ERROR` (+ `field` when known) |
+
+```bash
+# List (newest first; optional cursor / kycStatus / limit)
+curl -s 'http://localhost:8080/api/v1/users?limit=50'
+```
 
 **Validation:** Bean Validation on request DTOs (`@Valid`) for formats/ranges; handlers enforce business rules (duplicate email, missing user, non-HTTP callers). See `docs/low-level-design.md` — *Request validation (layered)*.
 

@@ -120,6 +120,7 @@ com.example.payment
 │   │   └── UpdateUserHandler.java
 │   ├── query
 │   │   ├── GetUserHandler.java
+│   │   ├── ListUsersHandler.java
 │   │   └── GetTransactionHandler.java
 │   └── mapper
 │
@@ -201,6 +202,7 @@ User profile **writes** are rare; **reads** happen on every payment and on `GET 
 | ---- | ------- | ---- |
 | `POST /api/v1/transactions` | `ProcessTransactionHandler` | Command |
 | `POST /api/v1/users` | `CreateUserHandler` | Command |
+| `GET /api/v1/users` | `ListUsersHandler` | Query |
 | `PATCH /api/v1/users/{id}` | `UpdateUserHandler` | Command |
 | `GET /api/v1/users/{id}` | `GetUserHandler` | Query |
 | `GET /api/v1/transactions/{id}` | `GetTransactionHandler` | Query |

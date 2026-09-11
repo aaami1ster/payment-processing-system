@@ -8,5 +8,13 @@ docs: |-
 
   Base path: `/api/v1/users`
 
-  Create → get → patch KYC / `preApprovedTransactionLimit`.
+  | Request | Method | Path |
+  | ------- | ------ | ---- |
+  | Create user | `POST` | `/api/v1/users` |
+  | List users | `GET` | `/api/v1/users` |
+  | Get user | `GET` | `/api/v1/users/{id}` |
+  | Update user | `PATCH` | `/api/v1/users/{id}` |
+  | Get user not found | `GET` | `/api/v1/users/{id}` (404) |
+
+  Flow: create → list → get → patch KYC / `preApprovedTransactionLimit`.
   All responses use the standard `ApiResponse` envelope.

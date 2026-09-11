@@ -1,0 +1,86 @@
+info:
+  name: List users
+  type: http
+  seq: 2
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/users"
+  params:
+    - name: limit
+      value: "50"
+      type: query
+    - name: cursor
+      value: "{{usersNextCursor}}"
+      type: query
+      disabled: true
+    - name: kycStatus
+      value: "PENDING"
+      type: query
+      disabled: true
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        if (res.status === 200 && res.body && res.body.data && res.body.data.nextCursor) {
+          bru.setEnvVar("usersNextCursor", res.body.data.nextCursor);
+        }
+    - type: tests
+      code: |-
+        test("HTTP 200", function() {
+          expect(res.status).to.equal(200);
+        });
+
+        test("page shape: items, nextCursor, hasMore", function() {
+          expect(res.body.data).to.have.property("items").that.is.an("array");
+          expect(res.body.data).to.have.property("hasMore");
+          expect(res.body.data).to.have.property("nextCursor");
+          expect(res.body.errors).to.be.an("array").that.is.empty;
+          expect(res.body.meta.requestId).to.be.a("string").that.is.not.empty;
+        });
+
+        test("created user appears when userId is set", function() {
+          const userId = bru.getEnvVar("userId");
+          if (!userId) {
+            return;
+          }
+          const ids = (res.body.data.items || []).map(function(u) {
+            return u.id || u.userId;
+          });
+          expect(ids).to.include(userId);
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # GET /api/v1/users
+
+  Cursor-paginated list of users (newest first).
+
+  ## When available
+  Phase 1+
+
+  ## Query params
+  | Param | Required | Notes |
+  | ----- | -------- | ----- |
+  | `cursor` | no | Opaque; from previous `nextCursor` (`{{usersNextCursor}}`) |
+  | `limit` | no | Default 50, max 200 |
+  | `kycStatus` | no | `PENDING` \| `VERIFIED` \| `REJECTED` |
+
+  ## Success
+  - **HTTP** `200`
+  - `data.items`, `data.nextCursor`, `data.hasMore`
+  - Empty page → `items: []`, `hasMore: false`, `nextCursor: null`
+
+  ## Errors
+  | HTTP | `errors[].code` |
+  | ---- | --------------- |
+  | `400` | `VALIDATION_ERROR` (bad `limit` / `cursor` / `kycStatus`) |
+
+  ## Prerequisite
+  Run **Create user** first so the page is non-empty (optional).

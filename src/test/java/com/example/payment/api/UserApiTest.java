@@ -157,15 +157,28 @@ class UserApiTest {
     }
 
     @Test
-    void getUsersCollectionIsNotSupported() throws Exception {
-        mockMvc.perform(get("/api/v1/users"))
-                .andExpect(status().isMethodNotAllowed())
-                .andExpect(jsonPath("$.data", nullValue()))
-                .andExpect(jsonPath("$.errors[0].code", equalTo("METHOD_NOT_ALLOWED")));
+    void listUsersReturnsPage() throws Exception {
+        String email = "list+" + System.currentTimeMillis() + "@example.com";
+        mockMvc.perform(post("/api/v1/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"%s"}
+                                """.formatted(email)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/users").param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.hasMore").isBoolean())
+                .andExpect(jsonPath("$.errors", empty()));
 
         mockMvc.perform(get("/api/v1/users/"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.data", nullValue()))
-                .andExpect(jsonPath("$.errors[0].code", equalTo("NOT_FOUND")));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isArray());
+
+        mockMvc.perform(get("/api/v1/users").param("limit", "999"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].code", equalTo("VALIDATION_ERROR")))
+                .andExpect(jsonPath("$.errors[0].field", equalTo("limit")));
     }
 }

@@ -12,5 +12,7 @@ variables:
     value: mch_bruno_demo
   - name: sampleEmail
     value: alice.bruno+1789157423834@example.com
+  - name: usersNextCursor
+    value: ""
   - name: declineUserId
     value: ""

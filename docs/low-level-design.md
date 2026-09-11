@@ -447,7 +447,7 @@ Rules:
 1. Controllers stay thin: validate the HTTP body/path, then call one handler.
 2. Handlers must not assume “only the controller calls me” — keep business guards even when DTOs already validate shape.
 3. All validation failures that are client mistakes return **HTTP 400** with `errors[].code = VALIDATION_ERROR` (and `field` when known). Uniqueness stays **409**; missing resources stay **404**.
-4. Unknown API paths return **404** `NOT_FOUND` (not a bare static-resource 500). Unsupported method on an existing path (e.g. `GET /api/v1/users` before list exists) returns **405** `METHOD_NOT_ALLOWED`.
+4. Unknown API paths return **404** `NOT_FOUND` (not a bare static-resource 500). Unsupported method on an existing path returns **405** `METHOD_NOT_ALLOWED`.
 5. Future endpoints (transactions, etc.) follow the same pattern: annotate request DTOs; keep fraud/payment invariants in handlers/domain.
 
 **Business vs API errors:** fraud `DECLINED` / `FLAGGED` are **success** payloads inside `data.status`. They must **never** appear in `errors[]`. `errors[]` is only for request, authz, conflict, and infrastructure failures.
@@ -615,6 +615,7 @@ Transaction could not be safely evaluated/persisted
 | Method  | Path                 | HTTP success | Purpose                                         |
 | ------- | -------------------- | ------------ | ----------------------------------------------- |
 | `POST`  | `/api/v1/users`      | `201`        | Create user (sets `createdAt`)                  |
+| `GET`   | `/api/v1/users`      | `200`        | Cursor-paginated list (`items`, `nextCursor`, `hasMore`) |
 | `GET`   | `/api/v1/users/{id}` | `200`        | Query profile                                   |
 | `PATCH` | `/api/v1/users/{id}` | `200`        | Update KYC and/or `preApprovedTransactionLimit` |
 
@@ -625,7 +626,9 @@ Create DTO validation: `@NotBlank` + `@Email` + `@Size(max=320)` on `email`.
 Patch DTO validation: when `preApprovedTransactionLimit` is present, `@DecimalMin("0.0001")` + `@Digits`.  
 Handlers additionally enforce blank email / non-positive limit / missing id for non-HTTP callers.
 
-All user endpoints use the same `ApiResponse` envelope (`data` = user resource on success).
+List query params: `cursor` (opaque `(createdAt, id)`), `limit` (default 50, max 200), optional `kycStatus`. Ordered by `created_at DESC, id DESC`. Same page shape as transaction export.
+
+All user endpoints use the same `ApiResponse` envelope (`data` = user resource on success, or a page object for list).
 
 ### Idempotency
 

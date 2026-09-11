@@ -53,7 +53,7 @@ Repo folder `[bruno/](bruno/)` is an **OpenCollection YAML** suite (Bruno ≥ 3)
 | Folder               | Phase gate | What it covers                                                      |
 | -------------------- | ---------- | ------------------------------------------------------------------- |
 | `bruno/health/`      | 0          | `/actuator/health`, liveness, readiness (+ prometheus when enabled) |
-| `bruno/user/`        | 1          | `POST/GET/PATCH /api/v1/users` + 404                                |
+| `bruno/user/`        | 1          | `POST/GET/PATCH /api/v1/users`, list, 404                       |
 | `bruno/transaction/` | 3–5 / 9    | Process, decline, get, idempotency, validation, list, audit-logs    |
 
 
@@ -265,15 +265,15 @@ Fix only Phase 0 gaps; do not start Phase 1.
 **Phase MVP / deliverables**
 
 - Domain `User`, `KycStatus`
-- Postgres entity/repository; `CreateUserHandler`, `GetUserHandler`, `UpdateUserHandler`
-- REST: `POST /api/v1/users`, `GET /api/v1/users/{id}`, `PATCH /api/v1/users/{id}`
+- Postgres entity/repository; `CreateUserHandler`, `GetUserHandler`, `UpdateUserHandler`, `ListUsersHandler`
+- REST: `POST /api/v1/users`, `GET /api/v1/users` (cursor list), `GET /api/v1/users/{id}`, `PATCH /api/v1/users/{id}`
 - Standard `ApiResponse` envelope + `GlobalExceptionHandler` (at least for users)
 - Layered input validation: Bean Validation on request DTOs + business guards in handlers
-- Unit/API tests for create/get/update + 404
+- Unit/API tests for create/get/update/list + 404
 
 **Documentation:** README API section for user endpoints (examples). Bruno `bruno/user/` docs stay in sync with the envelope.
 
-**Testing:** Handler unit tests; `@SpringBootTest` or MockMvc/Testcontainers for user API; **Bruno** `bruno/user/` (create / get / patch / 404).
+**Testing:** Handler unit tests; `@SpringBootTest` or MockMvc/Testcontainers for user API; **Bruno** `bruno/user/` (create / list / get / patch / 404).
 
 **Deployment:** Same compose stack; no new services.
 
@@ -297,8 +297,8 @@ cd bruno && npx @usebruno/cli run user --env Local
   **Acceptance:** Can save/load user with email unique, KYC default PENDING, null limit.
 
 - [x] **T1.2 — User command/query handlers**  
-  **Description:** Create / Get / Update (KYC + `preApprovedTransactionLimit`).  
-  **Acceptance:** Update is partial; unknown id → domain not-found; no fraud logic here.
+  **Description:** Create / Get / List (cursor) / Update (KYC + `preApprovedTransactionLimit`).  
+  **Acceptance:** Update is partial; unknown id → domain not-found; list returns `items`/`nextCursor`/`hasMore`; no fraud logic here.
 
 - [x] **T1.3 — User REST + ApiResponse envelope**  
   **Description:** Controllers return `ResponseEntity<ApiResponse<T>>`; errors use `errors[]` codes; `@Valid` on request DTOs.  
@@ -310,7 +310,7 @@ cd bruno && npx @usebruno/cli run user --env Local
 
 - [x] **T1.5 — Bruno user collection**  
   **Description:** Ensure `bruno/user/` requests match live paths/body/error codes; create sets `userId` for later phases.  
-  **Acceptance:** `bru run user --env Local` green (create → get → patch → not-found).
+  **Acceptance:** `bru run user --env Local` green (create → list → get → patch → not-found).
 
 
 

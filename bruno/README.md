@@ -48,7 +48,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/actuator/promethe
 | Folder | Phase | Endpoints |
 | ------ | ----- | --------- |
 | `health/` | 0 | Actuator health / liveness / readiness / prometheus |
-| `user/` | 1 | `POST/GET/PATCH /api/v1/users` + 404 |
+| `user/` | 1 | `POST/GET/PATCH /api/v1/users`, list, 404 |
 | `transaction/` | 3–5 / 9 | Process, decline, get, idempotency, validation, list, audit-logs |
 
 Each request has **docs** (contract) and **runtime tests** (status + envelope).
@@ -60,6 +60,7 @@ Invalid bodies should return **HTTP 400** with `errors[].code = VALIDATION_ERROR
 | Var | Set by |
 | --- | ------ |
 | `userId` | Create user |
+| `usersNextCursor` | List users (`nextCursor`, when present) |
 | `transactionId` | Process transaction |
 | `idempotencyKey` | Process transaction (when empty) |
 
