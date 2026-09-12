@@ -6,6 +6,20 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add interactive challenge demo`
+
+#### Added
+
+- Add an interactive shell demo that walks challenge and optional features one by one with confirm/skip, pass/fail tracking, and a pinned progress menu
+
+#### Removed
+
+- Drop `ADULT` and `GAMBLING` from payment categories and the high-risk Rule 3 set
+
+#### Changed
+
+- Document the updated high-risk category list in LLD and requirements
+
 ### MR: `feat: add phase 11 sonar static analysis`
 
 #### Added
