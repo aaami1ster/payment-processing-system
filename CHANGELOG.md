@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-12
+
+MR title: `chore(release): 1.1.0`
+
+### Added
+
+- Wire Sonar-ready JaCoCo XML reporting and the Sonar Maven plugin for optional `sonar:sonar` CI uploads
+- Run SpotBugs (High), PMD, and Checkstyle on `mvn verify` with lean configs under `config/`
+- Add a sample GitHub Actions workflow that runs verify and optionally uploads to Sonar when secrets exist
+- Document Code quality commands and gate expectations in the README
+- Enqueue optional WEBHOOK outbox rows beside AUDIT on payment commit for YAML subscribers
+- Deliver HMAC-signed HTTP POSTs asynchronously via `WebhookClient` (`X-Signature: sha256=…`)
+- Retry webhook delivery with the same outbox backoff when subscribers return 5xx or are unreachable
+- Cover signed delivery, 5xx retry, and subscriber-down paths with `WebhookOutboxIT`
+- Document webhook subscription config and at-least-once semantics in the README
+- List transactions via `GET /api/v1/transactions` with required `userId` and cursor pagination
+- Filter by optional `from`/`to`/`status` and enforce limit default 50 / max 200
+- Cover handler and API pagination (including empty pages) with unit and Testcontainers tests
+- Document bulk export in README/Swagger and harden Bruno `09-list-transactions` for Phase 9
+- Cache `GET /users/{id}` via optional Redis `user:{id}` read-through with TTL on `GetUserHandler`
+- Evict the cache key from `UpdateUserHandler` so PATCH results stay fresh
+- Fall back to PostgreSQL when Redis is disabled or errors; keep readiness independent of Redis
+- Add Compose `redis` profile and Testcontainers coverage (`UserCacheIT`) proving authorize path skips Redis
+- Cap `/api/v1/**` traffic with an in-process Bucket4j filter keyed by userId, merchantId, and IP
+- Return `429 RATE_LIMIT_EXCEEDED` with the ApiResponse envelope and optional `Retry-After`
+- Cover over-limit (no DB writes) and Rule 2 independence with Testcontainers
+- Document rate-limit defaults, config (`payment.rate-limit.*`), and burst demo in the README
+
+### Changed
+
+- Clear SpotBugs/PMD findings that blocked the new verify gate (Locale case conversion, `serialVersionUID`, velocity threshold constant)
+- Mark Phase 11 plan tasks T11.1–T11.2 done
+- Extend `audit_outbox` with `destination` / delivery columns so AUDIT and WEBHOOK share the publisher
+- Mark Phase 10 plan tasks T10.1–T10.2 done
+- Mark Phase 9 plan tasks T9.1–T9.2 done
+- Mark Phase 8 plan tasks T8.1–T8.2 done
+- Raise JaCoCo branch coverage gate to 80% on `mvn verify`
+- Mark Phase 7 plan tasks T7.1–T7.2 done
+
 ## [1.0.0] - 2026-09-12
 
 MR title: `chore(release): 1.0.0`
@@ -69,4 +108,5 @@ MR title: `chore(release): 1.0.0`
 - Suppress known OWASP CPE false positives and drop unfixed GNU wget from the app image
 
 [unreleased]: https://github.com/aaami1ster/payment-processing-system/compare/main...HEAD
+[1.1.0]: https://github.com/aaami1ster/payment-processing-system/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/aaami1ster/payment-processing-system/releases/tag/v1.0.0

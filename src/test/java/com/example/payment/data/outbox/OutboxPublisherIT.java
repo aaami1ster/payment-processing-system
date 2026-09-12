@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.example.payment.data.mongo.document.AuditLogDocument;
 import com.example.payment.data.postgres.entity.AuditOutboxEntity;
 import com.example.payment.data.postgres.repository.AuditOutboxJpaRepository;
-import com.example.payment.domain.outbox.OutboxStatus;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -67,6 +66,7 @@ class OutboxPublisherIT {
         registry.add("payment.outbox.publisher.enabled", () -> "true");
         // Avoid racing the scheduler; tests call publishBatch() explicitly
         registry.add("payment.outbox.publisher.poll-interval-ms", () -> "600000");
+        registry.add("payment.outbox.publisher.initial-delay-ms", () -> "600000");
     }
 
     @Autowired
@@ -129,7 +129,7 @@ class OutboxPublisherIT {
         outboxPublisher.publishBatch();
         assertThat(outboxStatus(transactionId)).isEqualTo("PENDING");
         Integer attempts = jdbcTemplate.queryForObject(
-                "SELECT attempts FROM audit_outbox WHERE transaction_id = ?::uuid",
+                "SELECT attempts FROM audit_outbox WHERE transaction_id = ?::uuid AND destination = 'AUDIT'",
                 Integer.class,
                 transactionId);
         assertThat(attempts).isGreaterThanOrEqualTo(1);
@@ -176,8 +176,7 @@ class OutboxPublisherIT {
 
         // Different merchant in outbox payload — insert must not upsert/overwrite the original
         String retryPayload = originalPayload.replace("mch_original", "mch_should_not_overwrite");
-        outboxRepository.save(new AuditOutboxEntity(
-                transactionId, retryPayload, OutboxStatus.PENDING, 0, null, now.minusSeconds(1), now));
+        outboxRepository.save(AuditOutboxEntity.audit(transactionId, retryPayload, now.minusSeconds(1)));
 
         int published = outboxPublisher.publishBatch();
         assertThat(published).isEqualTo(1);
@@ -233,7 +232,7 @@ class OutboxPublisherIT {
 
     private String outboxStatus(String transactionId) {
         return jdbcTemplate.queryForObject(
-                "SELECT status FROM audit_outbox WHERE transaction_id = ?::uuid",
+                "SELECT status FROM audit_outbox WHERE transaction_id = ?::uuid AND destination = 'AUDIT'",
                 String.class,
                 transactionId);
     }

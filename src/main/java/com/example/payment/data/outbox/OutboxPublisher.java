@@ -4,7 +4,10 @@ import com.example.payment.common.logging.LogFactory;
 import com.example.payment.config.OutboxProperties;
 import com.example.payment.data.mongo.document.AuditLogDocument;
 import com.example.payment.data.postgres.entity.AuditOutboxEntity;
+import com.example.payment.domain.outbox.OutboxDestination;
 import com.example.payment.domain.outbox.OutboxStatus;
+import com.example.payment.integration.webhook.WebhookClient;
+import com.example.payment.integration.webhook.WebhookDeliveryException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
@@ -22,10 +25,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.index.IndexOperations;
-import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.IndexOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -33,8 +36,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Claims PENDING outbox rows with {@code FOR UPDATE SKIP LOCKED}, projects audit docs to Mongo,
- * and marks {@code PUBLISHED}. At-least-once: {@link DuplicateKeyException} means already delivered.
+ * Claims PENDING outbox rows with {@code FOR UPDATE SKIP LOCKED}, branches by destination (Mongo
+ * audit or signed webhook), and marks {@code PUBLISHED}. At-least-once delivery.
  */
 @Component
 @ConditionalOnProperty(
@@ -55,6 +58,7 @@ public class OutboxPublisher {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final OutboxProperties properties;
+    private final WebhookClient webhookClient;
     private final TransactionTemplate transactionTemplate;
     private final CircuitBreaker mongoCircuitBreaker;
     private final Counter publishFailures;
@@ -68,12 +72,14 @@ public class OutboxPublisher {
             ObjectMapper objectMapper,
             Clock clock,
             OutboxProperties properties,
+            WebhookClient webhookClient,
             PlatformTransactionManager transactionManager,
             MeterRegistry meterRegistry) {
         this.mongoTemplate = mongoTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.properties = properties;
+        this.webhookClient = webhookClient;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.mongoCircuitBreaker = CircuitBreaker.of(
                 "mongoAudit",
@@ -96,7 +102,9 @@ public class OutboxPublisher {
                 .register(meterRegistry);
     }
 
-    @Scheduled(fixedDelayString = "${payment.outbox.publisher.poll-interval-ms:1000}")
+    @Scheduled(
+            fixedDelayString = "${payment.outbox.publisher.poll-interval-ms:1000}",
+            initialDelayString = "${payment.outbox.publisher.initial-delay-ms:0}")
     public void scheduledPublish() {
         try {
             publishBatch();
@@ -132,11 +140,6 @@ public class OutboxPublisher {
     }
 
     private int doPublishBatch() {
-        if (mongoCircuitBreaker.getState() == CircuitBreaker.State.OPEN) {
-            log.warn("outbox.publish.skipped reason=circuit_open");
-            return 0;
-        }
-
         Instant now = Instant.now(clock);
         List<AuditOutboxEntity> claimed = claimPending(now, properties.getBatchSize());
         refreshPendingGauge();
@@ -144,7 +147,20 @@ public class OutboxPublisher {
         int published = 0;
         for (AuditOutboxEntity row : claimed) {
             try {
-                publishOne(row, now);
+                if (row.getDestination() == OutboxDestination.WEBHOOK) {
+                    publishWebhook(row, now);
+                } else {
+                    if (mongoCircuitBreaker.getState() == CircuitBreaker.State.OPEN) {
+                        publishFailures.increment();
+                        log.warn(
+                                "outbox.publish.skipped reason=circuit_open transactionId={} outboxId={}",
+                                row.getTransactionId(),
+                                row.getId());
+                        scheduleRetry(row, now, "circuit open");
+                        continue;
+                    }
+                    publishAudit(row, now);
+                }
                 published++;
             } catch (CallNotPermittedException ex) {
                 publishFailures.increment();
@@ -153,11 +169,11 @@ public class OutboxPublisher {
                         row.getTransactionId(),
                         row.getId());
                 scheduleRetry(row, now, "circuit open");
-                break;
             } catch (Exception ex) {
                 publishFailures.increment();
                 log.warn(
-                        "outbox.publish.failed transactionId={} outboxId={} attempts={} error={}",
+                        "outbox.publish.failed destination={} transactionId={} outboxId={} attempts={} error={}",
+                        row.getDestination(),
                         row.getTransactionId(),
                         row.getId(),
                         row.getAttempts() + 1,
@@ -171,21 +187,54 @@ public class OutboxPublisher {
         return published;
     }
 
-    private void publishOne(AuditOutboxEntity row, Instant now) {
+    private void publishAudit(AuditOutboxEntity row, Instant now) {
         Timer.Sample sample = Timer.start();
         try {
             mongoCircuitBreaker.executeRunnable(() -> insertAudit(row));
-            row.setStatus(OutboxStatus.PUBLISHED);
-            row.setLastError(null);
-            row.setNextAttemptAt(now);
-            entityManager.merge(row);
+            markPublished(row, now);
             log.info(
-                    "outbox.published transactionId={} outboxId={}",
+                    "outbox.published destination=AUDIT transactionId={} outboxId={}",
                     row.getTransactionId(),
                     row.getId());
         } finally {
             sample.stop(publishDuration);
         }
+    }
+
+    private void publishWebhook(AuditOutboxEntity row, Instant now) {
+        String requestId = row.getTransactionId().toString();
+        try {
+            int status = webhookClient.deliver(
+                    row.getTargetUrl(), row.getSigningSecret(), row.getPayload(), requestId);
+            if (status >= 200 && status < 300) {
+                markPublished(row, now);
+                log.info(
+                        "outbox.published destination=WEBHOOK transactionId={} outboxId={} httpStatus={}",
+                        row.getTransactionId(),
+                        row.getId(),
+                        status);
+                return;
+            }
+            if (status == 429 || status >= 500) {
+                throw new WebhookDeliveryException("Webhook HTTP " + status);
+            }
+            // 4xx (except 429): retain + alert — do not silent-drop
+            log.error(
+                    "webhook.poison destination=WEBHOOK transactionId={} outboxId={} httpStatus={}",
+                    row.getTransactionId(),
+                    row.getId(),
+                    status);
+            throw new WebhookDeliveryException("Webhook poison HTTP " + status);
+        } catch (WebhookDeliveryException ex) {
+            throw ex;
+        }
+    }
+
+    private void markPublished(AuditOutboxEntity row, Instant now) {
+        row.setStatus(OutboxStatus.PUBLISHED);
+        row.setLastError(null);
+        row.setNextAttemptAt(now);
+        entityManager.merge(row);
     }
 
     private void insertAudit(AuditOutboxEntity row) {
@@ -221,7 +270,8 @@ public class OutboxPublisher {
         return entityManager
                 .createNativeQuery(
                         """
-                        SELECT id, transaction_id, payload, status, attempts, last_error, next_attempt_at, created_at
+                        SELECT id, transaction_id, destination, payload, target_url, signing_secret,
+                               status, attempts, last_error, next_attempt_at, created_at
                         FROM audit_outbox
                         WHERE status = 'PENDING'
                           AND next_attempt_at <= :now

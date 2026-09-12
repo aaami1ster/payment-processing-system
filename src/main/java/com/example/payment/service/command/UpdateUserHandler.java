@@ -5,6 +5,7 @@ import com.example.payment.common.exception.UserNotFoundException;
 import com.example.payment.common.logging.LogFactory;
 import com.example.payment.data.postgres.entity.UserEntity;
 import com.example.payment.data.postgres.repository.UserJpaRepository;
+import com.example.payment.data.redis.UserQueryCache;
 import com.example.payment.domain.user.KycStatus;
 import com.example.payment.domain.user.User;
 import com.example.payment.service.mapper.UserMapper;
@@ -26,6 +27,7 @@ public class UpdateUserHandler {
     private final UserJpaRepository userRepository;
     private final UserMapper userMapper;
     private final Clock clock;
+    private final UserQueryCache userQueryCache;
 
     @Transactional
     public User handle(UUID userId, KycStatus kycStatus, BigDecimal preApprovedTransactionLimit, boolean updateLimit) {
@@ -57,6 +59,7 @@ public class UpdateUserHandler {
 
         userMapper.applyDomain(user, entity);
         userRepository.save(entity);
+        userQueryCache.evict(userId);
         log.info("Updated user id={}", userId);
         return user;
     }

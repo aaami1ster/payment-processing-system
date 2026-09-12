@@ -49,17 +49,39 @@ services:
       retries: 12
       start_period: 15s
 
+  # Optional query-side cache (Phase 8). Start with:
+  #   docker compose --profile redis up --build -d
+  redis:
+    profiles: ["redis"]
+    image: redis:7-alpine
+    container_name: payments-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
   app:
     build: .
     container_name: payments-app
     ports:
       - "${APP_PORT:-8080}:8080"
+    # So the app can POST webhooks to a listener on the host (host.docker.internal)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       SPRING_MONGODB_URI: ${MONGO_URI}
       SPRING_DATA_MONGODB_URI: ${MONGO_URI}
+      PAYMENT_CACHE_USER_ENABLED: ${PAYMENT_CACHE_USER_ENABLED:-false}
+      PAYMENT_WEBHOOKS_ENABLED: ${PAYMENT_WEBHOOKS_ENABLED:-false}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST:-redis}
+      SPRING_DATA_REDIS_PORT: ${SPRING_DATA_REDIS_PORT:-6379}
     depends_on:
       postgres:
         condition: service_healthy

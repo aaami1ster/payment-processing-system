@@ -7,6 +7,7 @@ import com.example.payment.common.exception.UserNotFoundException;
 import com.example.payment.common.logging.LogFactory;
 import com.example.payment.common.util.RequestFingerprint;
 import com.example.payment.config.FraudProperties;
+import com.example.payment.config.WebhookProperties;
 import com.example.payment.data.postgres.entity.AuditOutboxEntity;
 import com.example.payment.data.postgres.repository.AuditOutboxJpaRepository;
 import com.example.payment.data.postgres.repository.TransactionJpaRepository;
@@ -16,7 +17,6 @@ import com.example.payment.domain.fraud.FraudContext;
 import com.example.payment.domain.fraud.FraudDecision;
 import com.example.payment.domain.fraud.FraudEngine;
 import com.example.payment.domain.fraud.RuleResult;
-import com.example.payment.domain.outbox.OutboxStatus;
 import com.example.payment.domain.transaction.Transaction;
 import com.example.payment.domain.transaction.TransactionStatus;
 import com.example.payment.domain.user.User;
@@ -63,6 +63,7 @@ public class ProcessTransactionHandler {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final PaymentMetrics paymentMetrics;
+    private final WebhookProperties webhookProperties;
 
     @Transactional
     public Transaction handle(
@@ -168,14 +169,76 @@ public class ProcessTransactionHandler {
 
     private void persistTransactionAndOutbox(Transaction transaction, User user, FraudDecision decision) {
         transactionRepository.save(transactionMapper.toEntity(transaction));
-        outboxRepository.save(new AuditOutboxEntity(
-                transaction.getId(),
-                buildAuditPayload(transaction, user, decision),
-                OutboxStatus.PENDING,
-                0,
-                null,
-                transaction.getCreatedAt(),
-                transaction.getCreatedAt()));
+        Instant createdAt = transaction.getCreatedAt();
+        outboxRepository.save(
+                AuditOutboxEntity.audit(transaction.getId(), buildAuditPayload(transaction, user, decision), createdAt));
+        enqueueMatchingWebhooks(transaction, createdAt);
+    }
+
+    private void enqueueMatchingWebhooks(Transaction transaction, Instant createdAt) {
+        if (!webhookProperties.isEnabled() || webhookProperties.getSubscribers() == null) {
+            return;
+        }
+        String event = "TRANSACTION_" + transaction.getStatus().name();
+        String payload = buildWebhookPayload(transaction, event);
+        for (WebhookProperties.Subscriber subscriber : webhookProperties.getSubscribers()) {
+            if (!matchesSubscriber(subscriber, transaction.getMerchantId(), event)) {
+                continue;
+            }
+            outboxRepository.save(AuditOutboxEntity.webhook(
+                    transaction.getId(),
+                    payload,
+                    subscriber.getTargetUrl(),
+                    subscriber.getSecret(),
+                    createdAt));
+            log.info(
+                    "webhook.enqueued transactionId={} subscriberId={} event={}",
+                    transaction.getId(),
+                    subscriber.getId(),
+                    event);
+        }
+    }
+
+    private static boolean matchesSubscriber(
+            WebhookProperties.Subscriber subscriber, String merchantId, String event) {
+        if (subscriber == null || !subscriber.isActive()) {
+            return false;
+        }
+        if (subscriber.getTargetUrl() == null
+                || subscriber.getTargetUrl().isBlank()
+                || subscriber.getSecret() == null
+                || subscriber.getSecret().isBlank()) {
+            return false;
+        }
+        String scope = subscriber.getMerchantId() == null ? "*" : subscriber.getMerchantId().trim();
+        if (!"*".equals(scope) && !scope.equals(merchantId)) {
+            return false;
+        }
+        List<String> events = subscriber.getEvents();
+        if (events == null || events.isEmpty()) {
+            return true;
+        }
+        return events.stream().anyMatch(e -> e != null && e.equalsIgnoreCase(event));
+    }
+
+    private String buildWebhookPayload(Transaction transaction, String event) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("event", event);
+        payload.put("transactionId", transaction.getId().toString());
+        payload.put("userId", transaction.getUserId().toString());
+        payload.put("merchantId", transaction.getMerchantId());
+        payload.put("status", transaction.getStatus().name());
+        payload.put("amount", transaction.getAmount().toPlainString());
+        payload.put("category", transaction.getCategory().name());
+        payload.put(
+                "rulesTriggered",
+                transaction.getRulesTriggered().stream().map(Enum::name).toList());
+        payload.put("createdAt", transaction.getCreatedAt().toString());
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception ex) {
+            throw new ServiceUnavailableException("Unable to serialize webhook payload", ex);
+        }
     }
 
     private String buildAuditPayload(Transaction transaction, User user, FraudDecision decision) {

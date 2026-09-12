@@ -902,11 +902,11 @@ After Phase 6, you should be able to check the challenge deliverables:
 
 ### Tasks
 
-- [ ] **T7.1 — Rate limit filter + config**  
+- [x] **T7.1 — Rate limit filter + config**  
   **Description:** Key by userId and/or merchantId; configurable windows.  
   **Acceptance:** Over-limit never inserts transaction/outbox.
 
-- [ ] **T7.2 — 429 envelope + tests + README**  
+- [x] **T7.2 — 429 envelope + tests + README**  
   **Description:** Match LLD optional contract; optional `Retry-After`.  
   **Acceptance:** Tests prove 429 vs Rule 2 independence.
 
@@ -945,11 +945,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T8.1 — Redis cache on GetUserHandler**  
+- [x] **T8.1 — Redis cache on GetUserHandler**  
   **Description:** Read-through + TTL; UpdateUserHandler deletes key.  
   **Acceptance:** ProcessTransactionHandler never reads Redis for user.
 
-- [ ] **T8.2 — Resilience + tests + README**  
+- [x] **T8.2 — Resilience + tests + README**  
   **Description:** Redis down → PG fallback; document optional compose service.  
   **Acceptance:** Core tests pass without Redis; cache tests use Testcontainers Redis or similar.
 
@@ -987,11 +987,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T9.1 — List endpoint + cursor query**  
+- [x] **T9.1 — List endpoint + cursor query**  
   **Description:** Filters userId/from/to/status/limit per LLD.  
   **Acceptance:** Deterministic order `created_at DESC, id DESC`; max limit enforced.
 
-- [ ] **T9.2 — Tests + OpenAPI/README/Bruno**  
+- [x] **T9.2 — Tests + OpenAPI/README/Bruno**  
   **Description:** Pagination + empty page cases; keep Bruno list request docs/tests accurate.  
   **Acceptance:** Documented in Swagger, README, and `bruno/transaction/` list request.
 
@@ -1029,11 +1029,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T10.1 — Webhook outbox + client**  
+- [x] **T10.1 — Webhook outbox + client**  
   **Description:** Enqueue on commit; publisher branch WEBHOOK; HMAC signature header.  
   **Acceptance:** At-least-once; failures backoff; POST /transactions does not call webhook inline.
 
-- [ ] **T10.2 — Tests + README**  
+- [x] **T10.2 — Tests + README**  
   **Description:** Delivery success/retry; signature verified in test.  
   **Acceptance:** Documented subscription config.
 
@@ -1071,11 +1071,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T11.1 — Static analysis tooling**  
+- [x] **T11.1 — Static analysis tooling**  
   **Description:** Prefer Sonar-ready JaCoCo + document `sonar:sonar`; and/or SpotBugs/PMD on verify.  
   **Acceptance:** Documented commands; no compose Sonar required for app runtime.
 
-- [ ] **T11.2 — README / CI notes**  
+- [x] **T11.2 — README / CI notes**  
   **Description:** How to run locally/CI; quality gate expectations.  
   **Acceptance:** New contributor can run analysis from docs.
 
@@ -1150,11 +1150,11 @@ Hard rules:
 - [x] Phase 4 — Mongo audit publisher
 - [x] Phase 5 — API polish & observability
 - [x] Phase 6 — Hardening & submission README
-- [ ] Phase 7 — Rate limiting (optional)
-- [ ] Phase 8 — Redis cache (optional)
-- [ ] Phase 9 — Bulk export (optional)
-- [ ] Phase 10 — Webhooks (optional)
-- [ ] Phase 11 — Static analysis (optional)
+- [x] Phase 7 — Rate limiting (optional)
+- [x] Phase 8 — Redis cache (optional)
+- [x] Phase 9 — Bulk export (optional)
+- [x] Phase 10 — Webhooks (optional)
+- [x] Phase 11 — Static analysis (optional)
 
 **First impressive demo:** end of **Phase 3**.  
 **Challenge-complete demo:** end of **Phase 6**.
