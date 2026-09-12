@@ -1,313 +1,254 @@
 # Payment Processing System
 
-Spring Boot **4.1.1** payment service with fraud detection (challenge MVP; Boot 4 only because Spring Framework High/Critical CVEs have no OSS 6.2.x fix — see `docs/plan.md`). Design docs live in [`docs/`](docs/).
+## Overview
 
-## Prerequisites
+Spring Boot payment authorization service with an in-process fraud engine, durable PostgreSQL decisions (transaction + audit outbox), and asynchronous MongoDB audit projection. Challenge MVP (Phases 0–6): authorize → persist → return `APPROVED` / `FLAGGED` / `DECLINED` only after PostgreSQL commit.
+
+**Core guarantee:** no business decision is returned unless the transaction **and** its audit outbox row were committed in PostgreSQL. Persistence unavailable → `503` — never fabricate a decline.
+
+## Architecture
+
+CQRS-lite on a single PostgreSQL system of record:
+
+| Layer | Role |
+| ----- | ---- |
+| API | Controllers, `ApiResponse` envelope, Bean Validation, OpenAPI |
+| Commands | Writes: `FOR UPDATE`, idempotency, fraud, persist + outbox |
+| Queries | Read-only views (`GetUser`, `GetTransaction`, list users) |
+| Domain | `User`, `Transaction`, `FraudEngine` + four `FraudRule`s |
+| Data | JPA/Liquibase (Postgres), Mongo audit docs, `OutboxPublisher` |
+
+```text
+POST /transactions → ProcessTransactionHandler
+  → SELECT user FOR UPDATE
+  → FraudEngine (all rules)
+  → INSERT transaction + audit_outbox (one PG txn)
+  → 201 + business status
+       ↓ async
+  OutboxPublisher → Mongo audit_logs (_id = transactionId)
+```
+
+Design docs: [`docs/`](docs/) · plan: [`docs/plan.md`](docs/plan.md) · HLD: [`docs/high-level-design.md`](docs/high-level-design.md) · LLD: [`docs/low-level-design.md`](docs/low-level-design.md).
+
+**Stack:** Java 21+, Spring Boot **4.1.1**, Maven, PostgreSQL 18, MongoDB 8, Liquibase, Testcontainers, JUnit 5, JaCoCo. Boot 4 is used only because Spring Framework High/Critical CVEs have no OSS 6.2.x fix on Maven Central (see `docs/plan.md`).
+
+## Setup & Prerequisites
 
 - Java 21+
 - Maven 3.9+
 - Docker + Docker Compose
+- `jq` (for [`scripts/demo.sh`](scripts/demo.sh))
 
-## Runtime stack (Compose)
+```bash
+cp .env.example .env   # first time; .env is gitignored
+```
+
+## Running the Application
+
+```bash
+docker compose up --build -d
+# wait until healthy, then:
+curl -s http://localhost:8080/actuator/health/readiness
+./scripts/demo.sh
+```
 
 | Service | Image |
 | ------- | ----- |
-| App | built from `Dockerfile` (Temurin 21) |
+| App | `Dockerfile` (Temurin 21) |
 | PostgreSQL | `postgres:18-alpine` |
-| MongoDB | `mongo:8` (official image; no alpine tag) |
+| MongoDB | `mongo:8` |
 
-## Run with Docker Compose
+Ports and credentials come from `.env` (`APP_PORT` default `8080`). If you previously used Postgres ≤17 with this project, wipe volumes once: `docker compose down -v`.
 
-```bash
-cp .env.example .env   # first time only; .env is gitignored
-docker compose up --build -d
-```
-
-Configuration lives in `.env` (ports, DB credentials, Mongo URI / `GLIBC_TUNABLES`). See `.env.example`.
-
-If you previously ran an older Postgres major (≤17) with this project, wipe volumes once so PG 18 can init a fresh data dir:
+**Local Maven (DB must be up):**
 
 ```bash
-docker compose down -v
-docker compose up --build -d
+docker compose up -d postgres mongo
+mvn -q -DskipTests package
+# run PaymentProcessingApplication with .env (see IntelliJ EnvFile note below)
 ```
 
-Wait until the app is healthy, then check (port from `APP_PORT`, default `8080`):
+**OpenAPI / Swagger:** http://localhost:8080/swagger-ui.html · http://localhost:8080/v3/api-docs
+
+**Manual API tests (Bruno):** collection in [`bruno/`](bruno/) — Desktop with env **Local**, or:
 
 ```bash
-curl -s http://localhost:8080/actuator/health
-curl -s http://localhost:8080/actuator/health/liveness
-curl -s http://localhost:8080/actuator/health/readiness
+cd bruno && npx @usebruno/cli run --env Local
+# or by folder: health | user | transaction
 ```
 
-Expect `"status":"UP"`. Readiness requires PostgreSQL; MongoDB can be down without failing readiness (app still waits for a healthy Mongo on first compose start).
+## API Endpoints
 
-Verify Liquibase tables:
+All responses use the `ApiResponse` envelope (`data`, `message`, `errors[]`, `meta.requestId`). Optional header: `X-Request-Id` (echoed + MDC). Optional on payments: `Idempotency-Key`.
 
-```bash
-docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\dt'
-# or defaults: -U payments -d payments
-# expect: users, transactions, audit_outbox (+ Liquibase tables)
-```
-
-Stop:
-
-```bash
-docker compose down
-```
-
-## Manual API tests (Bruno)
-
-Open [`bruno/`](bruno/) in [Bruno](https://www.usebruno.com/) (YAML / OpenCollection) with env **Local**, or:
-
-```bash
-cd bruno && npx @usebruno/cli run health --env Local
-cd bruno && npx @usebruno/cli run user --env Local
-cd bruno && npx @usebruno/cli run transaction --env Local
-```
-
-## Users API (Phase 1)
-
-Base path: `/api/v1/users`. Responses use the `ApiResponse` envelope (`data`, `message`, `errors[]`, `meta.requestId`).
-
-```bash
-# Create (KYC defaults to PENDING; preApprovedTransactionLimit is null)
-curl -s -X POST http://localhost:8080/api/v1/users \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com"}'
-
-# Get
-curl -s http://localhost:8080/api/v1/users/<userId>
-
-# Patch KYC and/or pre-approved limit (needed later for fraud Rule 1)
-curl -s -X PATCH http://localhost:8080/api/v1/users/<userId> \
-  -H 'Content-Type: application/json' \
-  -d '{"kycStatus":"VERIFIED","preApprovedTransactionLimit":15000}'
-```
+### Users — `/api/v1/users`
 
 | Method | Path | Success | Notes |
 | ------ | ---- | ------- | ----- |
-| `POST` | `/api/v1/users` | `201` | Body: `{ "email", "kycStatus"? }` |
-| `GET` | `/api/v1/users` | `200` | Cursor page: `items`, `nextCursor`, `hasMore` (`limit`, `cursor`, optional `kycStatus`) |
-| `GET` | `/api/v1/users/{id}` | `200` | `404` + `USER_NOT_FOUND` if missing |
-| `PATCH` | `/api/v1/users/{id}` | `200` | Partial update of KYC and/or limit |
-| `POST` duplicate email | | `409` | `EMAIL_ALREADY_EXISTS` |
-| Invalid body / query | | `400` | `VALIDATION_ERROR` (+ `field` when known) |
+| `POST` | `/api/v1/users` | `201` | `{ "email", "kycStatus"? }` |
+| `GET` | `/api/v1/users` | `200` | Cursor page (`limit`, `cursor`, optional `kycStatus`) |
+| `GET` | `/api/v1/users/{id}` | `200` | `404` `USER_NOT_FOUND` |
+| `PATCH` | `/api/v1/users/{id}` | `200` | KYC and/or `preApprovedTransactionLimit` |
 
-```bash
-# List (newest first; optional cursor / kycStatus / limit)
-curl -s 'http://localhost:8080/api/v1/users?limit=50'
-```
+### Transactions — `/api/v1/transactions`
 
-**Validation:** Bean Validation on request DTOs (`@Valid`) for formats/ranges; handlers enforce business rules (duplicate email, missing user, non-HTTP callers). See `docs/low-level-design.md` — *Request validation (layered)*.
+| Method | Path | Success | Notes |
+| ------ | ---- | ------- | ----- |
+| `POST` | `/api/v1/transactions` | `201` | Body: `amount`, `userId`, `merchantId`, `category` — status in `data` even when `DECLINED` |
+| `GET` | `/api/v1/transactions/{id}` | `200` | `404` `NOT_FOUND` |
 
-## Fraud rules (Phase 2)
+| Outcome | HTTP | Code |
+| ------- | ---- | ---- |
+| Processed | `201` | business status in `data` |
+| Unknown user | `404` | `USER_NOT_FOUND` |
+| Same key, different payload | `409` | `IDEMPOTENCY_CONFLICT` |
+| Invalid body | `400` | `VALIDATION_ERROR` |
+| PostgreSQL failure | `503` | `SERVICE_UNAVAILABLE` |
 
-In-process strategy objects under `domain/fraud` (no Drools). The service gathers data; `FraudEngine` runs **all** rules and aggregates:
-
-`DECLINE` → `DECLINED` · else `FLAG` → `FLAGGED` · else `APPROVED`
+### Fraud rules
 
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
-| `AMOUNT_WITHOUT_APPROVAL` | `amount > 10_000` and `amount > preApprovedTransactionLimit` (`null`/`0` = no approval) | `DECLINE` |
+| `AMOUNT_WITHOUT_APPROVAL` | `amount > 10_000` and above pre-approved limit (`null`/`0` = none) | `DECLINE` |
 | `VELOCITY` | ≥ 3 prior `APPROVED`/`FLAGGED` in inclusive `[now-60s, now]` | `DECLINE` |
-| `HIGH_RISK_CATEGORY` | category ∈ high-risk set (`GAMBLING`, `CRYPTO`, `CASH_ADVANCE`, `ADULT`) and `amount > 5_000` | `DECLINE` |
+| `HIGH_RISK_CATEGORY` | high-risk category and `amount > 5_000` | `DECLINE` |
 | `NEW_USER_HIGH_AMOUNT` | `amount > 5_000` and user younger than 30 days | `FLAG` |
 
-`FLAGGED` is a **successful** authorization that needs review (HTTP `201`). Business `DECLINED` is not an infrastructure failure — Postgres outages map to `503`, not a fabricated decline. High-risk categories and thresholds live in `fraud.*` (`FraudProperties`). Details: [docs/low-level-design.md](docs/low-level-design.md) (Fraud Detection Engine, Rule 2).
+Aggregation: any `DECLINE` → `DECLINED`; else any `FLAG` → `FLAGGED`; else `APPROVED`.
+
+### Ops
+
+- Health: `/actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` (readiness requires Postgres; Mongo is not required for readiness)
+- Metrics: `/actuator/prometheus` (`payment_transactions_total`, `outbox_pending_count`, …)
+
+### Quick curl sequence
+
+Prefer [`scripts/demo.sh`](scripts/demo.sh). Minimal path:
 
 ```bash
-mvn -q -Dtest='*Fraud*,*Rule*,*VelocityWindow*' test
-```
-
-## Process transaction (Phase 3)
-
-**Core guarantee:** no `APPROVED` / `FLAGGED` / `DECLINED` is returned unless the transaction **and** its audit outbox row were committed in PostgreSQL. Mongo publish is async (Phase 4); the client never waits on Mongo.
-
-Base path: `/api/v1/transactions`. Optional header: `Idempotency-Key` (fingerprint = SHA-256 of `userId|merchantId|amount|category`).
-
-```bash
-# 1) Create user
 USER_ID=$(curl -s -X POST http://localhost:8080/api/v1/users \
   -H 'Content-Type: application/json' \
   -d '{"email":"payer@example.com"}' | jq -r '.data.id')
 
-# 2) Small amount → APPROVED (HTTP 201)
 curl -s -X POST http://localhost:8080/api/v1/transactions \
   -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: demo-key-1" \
+  -H 'Idempotency-Key: demo-key-1' \
   -d "{\"amount\":100.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
-
-# 3) High amount without limit → DECLINED (still HTTP 201; errors=[])
-curl -s -X POST http://localhost:8080/api/v1/transactions \
-  -H 'Content-Type: application/json' \
-  -d "{\"amount\":12000.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
-
-# 4) Raise pre-approved limit, retry high amount → FLAGGED for new users (Rule 4), still 201
-curl -s -X PATCH "http://localhost:8080/api/v1/users/$USER_ID" \
-  -H 'Content-Type: application/json' \
-  -d '{"preApprovedTransactionLimit":15000}'
-
-curl -s -X POST http://localhost:8080/api/v1/transactions \
-  -H 'Content-Type: application/json' \
-  -d "{\"amount\":12000.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
-
-# 5) Replay same Idempotency-Key + body → same transactionId
-curl -s -X POST http://localhost:8080/api/v1/transactions \
-  -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: demo-key-1" \
-  -d "{\"amount\":100.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
-
-# 6) Verify durable rows (outbox becomes PUBLISHED once the Phase 4 publisher drains)
-docker compose exec postgres psql -U payments -d payments \
-  -c "SELECT id, status, amount FROM transactions ORDER BY created_at DESC LIMIT 5;"
-docker compose exec postgres psql -U payments -d payments \
-  -c "SELECT transaction_id, status FROM audit_outbox ORDER BY id DESC LIMIT 5;"
 ```
 
-| Outcome | HTTP | Notes |
-| ------- | ---- | ----- |
-| Processed (`APPROVED`/`FLAGGED`/`DECLINED`) | `201` | Business status in `data.status`; `errors` = `[]` |
-| Unknown user | `404` | `USER_NOT_FOUND` |
-| Same key, different payload | `409` | `IDEMPOTENCY_CONFLICT` |
-| Invalid body | `400` | `VALIDATION_ERROR` |
-| PostgreSQL / commit failure | `503` | `SERVICE_UNAVAILABLE` |
-
-Authorize path loads the user with `SELECT … FOR UPDATE` inside `ProcessTransactionHandler` — never via `GetUserHandler`.
-
-## Async audit (Phase 4)
-
-**Why an outbox (not sync dual-write)?** The authorize path must never wait on Mongo. PostgreSQL commits the transaction **and** an `audit_outbox` row in one DB transaction; that is the durable decision. A background `OutboxPublisher` claims `PENDING` rows with `FOR UPDATE SKIP LOCKED`, inserts an immutable Mongo `audit_logs` document (`_id = transactionId`), and marks `PUBLISHED`. Retries use exponential backoff (`next_attempt_at` / `attempts`). Duplicate `_id` on retry is treated as success (at-least-once).
-
-**Why Mongo at all?** PostgreSQL alone could store audit rows atomically and would be simpler. Mongo is a separate **audit projection** to demonstrate resilience across heterogeneous stores. PostgreSQL remains the system of record; Mongo may lag without blocking payments.
+## Running Tests
 
 ```bash
-# After POST /transactions, wait a moment then inspect Mongo
-docker compose exec mongo mongosh payments_audit --quiet --eval 'db.audit_logs.find().limit(3).toArray()'
-
-# Outbox should move PENDING → PUBLISHED
-docker compose exec postgres psql -U payments -d payments \
-  -c "SELECT transaction_id, status, attempts FROM audit_outbox ORDER BY id DESC LIMIT 5;"
-
-# Mongo down: payments still return 201; outbox stays PENDING until Mongo recovers
-docker compose stop mongo
-# POST /api/v1/transactions → 201, outbox PENDING
-docker compose start mongo
-# publisher drains → audit document appears, outbox PUBLISHED
+mvn test          # unit + Testcontainers integration
+mvn verify        # tests + JaCoCo report + ≥ 75% line coverage gate
 ```
+
+Notable suites:
+
+| Suite | What |
+| ----- | ---- |
+| `*Fraud*`, `*Rule*` | Domain fraud rules / aggregation (no Spring) |
+| `TransactionApiTest`, `UserApiTest` | HTTP + Postgres Testcontainers |
+| `ConcurrencyIT` | Rule 2 race (2 existing + 2 parallel) + concurrent idempotency |
+| `OutboxPublisherIT` | Mongo projection, outage/recovery, duplicate `_id` |
+
+Docker is required for Testcontainers. Security scanners (phase gate):
 
 ```bash
-mvn -q -Dtest='OutboxPublisherIT' test
+./scripts/check-security-docker-scout.sh
+./scripts/check-security-owasp.sh   # needs NVD_API_KEY in .env
 ```
+
+## Code Coverage
+
+JaCoCo is bound to `mvn verify` (`prepare-agent`, `report`, `check`). Line coverage must be **≥ 75%** or the build fails (`jacoco.minimum.coverage` in `pom.xml`).
 
 ```bash
-cd bruno && npx @usebruno/cli run user --env Local
-cd bruno && npx @usebruno/cli run transaction --env Local
+mvn verify
+open target/site/jacoco/index.html
 ```
 
-## API polish & observability (Phase 5)
+## Design Decisions
 
-### OpenAPI / Swagger UI
+Highlights from the [HLD](docs/high-level-design.md):
 
-Interactive docs (springdoc):
+| Topic | Choice | Why |
+| ----- | ------ | --- |
+| Fraud rules | In-process `FraudRule` + `FraudEngine` | Unit-testable; Drools too heavy for four static rules |
+| Commands vs queries | CQRS-lite, same Postgres | Clear write/read boundaries; authorize never uses a cache |
+| Consistency | `SELECT … FOR UPDATE` on user row | Serializes Rule 2 velocity per user across app instances |
+| Audit | Transactional outbox → async Mongo | Decision durable in PG; client never waits on Mongo |
+| Why Mongo at all? | Separate audit projection | Demonstrates heterogeneous-store resilience; PG remains SoR |
+| Idempotency | Optional key + SHA-256 fingerprint + partial unique index | Safe retries; `409` on fingerprint conflict |
+| Validation | Bean Validation on DTOs **and** handler guards | Contract at the edge; invariants for non-HTTP callers |
+| Logging | SLF4J via `LogFactory` + Logback JSON + MDC | Never `System.out`; correlate via `requestId` |
 
-- Swagger UI: http://localhost:8080/swagger-ui.html
-- OpenAPI JSON: http://localhost:8080/v3/api-docs
+**Authorize path:** load user with `FOR UPDATE` inside `ProcessTransactionHandler` — not via `GetUserHandler`.
 
-```bash
-open http://localhost:8080/swagger-ui.html
-# or: open http://localhost:8080/swagger-ui/index.html
+## Domain UML
+
+See also [`docs/uml-domain.md`](docs/uml-domain.md).
+
+```mermaid
+classDiagram
+    class User {
+        +UUID id
+        +String email
+        +KycStatus kycStatus
+        +BigDecimal preApprovedTransactionLimit
+        +Instant createdAt
+        +Instant updatedAt
+    }
+    class Transaction {
+        +UUID id
+        +UUID userId
+        +String merchantId
+        +BigDecimal amount
+        +Category category
+        +TransactionStatus status
+        +List~RuleId~ rulesTriggered
+        +String idempotencyKey
+        +String requestFingerprint
+        +Instant createdAt
+    }
+    class AuditLog {
+        +String id
+        +UUID transactionId
+        +UUID userId
+        +TransactionStatus decision
+        +List~RuleResult~ rulesTriggered
+        +UserSnapshot userContext
+        +Instant timestamp
+    }
+    class UserSnapshot {
+        +KycStatus kycStatus
+        +BigDecimal preApprovedTransactionLimit
+        +Instant userCreatedAt
+    }
+    class FraudRule {
+        <<interface>>
+        +evaluate(FraudContext) Optional~RuleResult~
+    }
+
+    User "1" --> "*" Transaction : places
+    Transaction "1" --> "1" AuditLog : audited by
+    AuditLog --> UserSnapshot
+    Transaction --> FraudRule : evaluated by
 ```
-
-### GET transaction
-
-```bash
-# After POST /api/v1/transactions (sets TXN_ID)
-curl -si "http://localhost:8080/api/v1/transactions/$TXN_ID"
-# 200 + envelope; unknown id → 404 NOT_FOUND
-```
-
-### Metrics (Actuator Prometheus)
-
-Scrape endpoint (already exposed):
-
-```bash
-curl -s http://localhost:8080/actuator/prometheus | grep -E 'payment_transactions_total|payment_processing_duration|outbox_pending'
-```
-
-| Metric (Micrometer name) | Prometheus-ish name | Purpose |
-| ------------------------ | ------------------- | ------- |
-| `payment.transactions.total{status}` | `payment_transactions_total` | Throughput by outcome |
-| `payment.processing.duration` | `payment_processing_duration_*` | Authorize latency |
-| `fraud.rule.triggered{rule}` | `fraud_rule_triggered_total` | Which rules fire |
-| `outbox.pending.count` | `outbox_pending_count` | Outbox backlog |
-| `outbox.oldest.pending.age` | `outbox_oldest_pending_age` | Oldest PENDING age (seconds) |
-| `outbox.publish.failures` | `outbox_publish_failures_total` | Publish errors |
-| `mongo.publish.duration` | `mongo_publish_duration_*` | Publisher latency |
-
-### Logging: Logback JSON + MDC
-
-Application code logs only through SLF4J via `LogFactory` (never `System.out`). Logback writes **JSON** lines to the console using Logstash encoder (`src/main/resources/logback-spring.xml`), so each event is a structured object (`@timestamp`, `message`, `logger_name`, `level`, …) that log aggregators can index.
-
-**MDC** (Mapped Diagnostic Context) is a per-request thread-local map of correlation fields. `RequestIdFilter` accepts or generates `X-Request-Id`, echoes it as a response header, puts it in MDC, and controllers put the same value in `meta.requestId`. Payment processing also sets `transactionId`, `userId`, `status`, `rulesTriggered`, and `durationMs` for the decision log line.
-
-| MDC key | Purpose |
-| ------- | ------- |
-| `requestId` | Correlate client response with server logs |
-| `transactionId` | Payment decision id |
-| `userId` | Paying user (when known) |
-| `status` | Business outcome (`APPROVED` / `FLAGGED` / `DECLINED`) |
-| `rulesTriggered` | Fraud rules that fired |
-| `durationMs` | Processing latency |
-
-```bash
-curl -si http://localhost:8080/api/v1/users/<userId> | grep -i x-request-id
-docker compose logs app --tail 100 | grep '<requestId>'
-```
-
-Do not log credentials, tokens, or full sensitive financial payloads.
-
-## Local Maven build
-
-```bash
-mvn -q -DskipTests package
-```
-
-Requires PostgreSQL + Mongo reachable at the URLs in `src/main/resources/application.yml` (or override via env).
-
-**Lombok:** optional compile-time dependency (`@Value`, `@Getter`/`@Setter`, `@RequiredArgsConstructor`). Enable annotation processing in the IDE. Prefer Java **records** for API DTOs; keep `LogFactory` (do not use `@Slf4j`).
-
-## Security vulnerability scan
-
-Run after each phase (and before marking validation done):
-
-```bash
-./scripts/check-security-docker-scout.sh   # fast (Docker Scout; docker login once)
-BUILD_APP_IMAGE=1 ./scripts/check-security-docker-scout.sh  # rebuild app then scan
-./scripts/check-security-owasp.sh          # Maven deps (OWASP; needs NVD_API_KEY in .env)
-# or:
-./scripts/check-security-vulnerabilities.sh
-```
-
-Gate = project sources + app image (Temurin base ignored by default). Official `postgres`/`mongo` images are scanned as warnings (`FAIL_ON_VENDOR=1` to enforce). Set `NVD_API_KEY` in `.env` (see `.env.example`). Reports: `target/security/scout/` and `target/security/owasp/`.
 
 ## IntelliJ: debug with `.env`
 
-To load project `.env` variables when running/debugging the app from IntelliJ:
+1. Install **EnvFile** (Borys Pierov), restart IDE  
+2. Run/debug config for `PaymentProcessingApplication` → enable EnvFile → project `.env`  
+3. Start Postgres/Mongo: `docker compose up -d postgres mongo`
 
-1. **IntelliJ → Settings → Plugins**
-2. Search for **EnvFile** by **Borys Pierov**, install it, then **restart** the IDE
-3. Open the run/debug configuration for `PaymentProcessingApplication`
-4. Follow the plugin **Overview** steps to enable EnvFile and point it at the project root `.env` (copy from `.env.example` if needed)
-5. Start the configuration in **Debug** mode
-
-Ensure Postgres and Mongo are up (e.g. `docker compose up -d postgres mongo`) before debugging locally.
-
-## Docs
+## Docs index
 
 | Doc | Purpose |
 | --- | ------- |
 | [docs/README.md](docs/README.md) | Design index |
 | [docs/plan.md](docs/plan.md) | Phased implementation plan |
-| [docs/high-level-design.md](docs/high-level-design.md) | Architecture |
-| [docs/low-level-design.md](docs/low-level-design.md) | Schema, API, fraud rules |
+| [docs/high-level-design.md](docs/high-level-design.md) | Architecture & trade-offs |
+| [docs/low-level-design.md](docs/low-level-design.md) | Schema, API, fraud, testing |
+| [docs/uml-domain.md](docs/uml-domain.md) | Domain class diagram |
+| [docs/Payment_Processing_Code_Challenge.md](docs/Payment_Processing_Code_Challenge.md) | Challenge brief |

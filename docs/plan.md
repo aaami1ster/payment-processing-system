@@ -808,19 +808,19 @@ cd bruno && npx @usebruno/cli run --env Local
 
 ### Tasks
 
-- [ ] **T6.1 — Concurrency + idempotency integration tests**  
+- [x] **T6.1 — Concurrency + idempotency integration tests**  
   **Description:** Exact LLD scenarios for Rule 2 race and concurrent same idempotency key.  
   **Acceptance:** Assertions match LLD expected outcomes.
 
-- [ ] **T6.2 — JaCoCo ≥ 75%**  
+- [x] **T6.2 — JaCoCo ≥ 75%**  
   **Description:** Enforce on verify; fill coverage gaps with meaningful tests.  
   **Acceptance:** `mvn verify` fails if under threshold; report generated.
 
-- [ ] **T6.3 — README completion + UML**  
+- [x] **T6.3 — README completion + UML**  
   **Description:** Fill challenge README template; include core guarantee, Mongo justification, how to test/coverage; link Bruno collection.  
   **Acceptance:** New reader can run system from README alone.
 
-- [ ] **T6.4 — End-to-end demo script**  
+- [x] **T6.4 — End-to-end demo script**  
   **Description:** `scripts/demo.sh` or README section with ordered curls; optionally wrap `bru run`.  
   **Acceptance:** Script succeeds against local compose.
 
@@ -1149,7 +1149,7 @@ Hard rules:
 - [x] Phase 3 — Process transaction MVP
 - [x] Phase 4 — Mongo audit publisher
 - [x] Phase 5 — API polish & observability
-- [ ] Phase 6 — Hardening & submission README
+- [x] Phase 6 — Hardening & submission README
 - [ ] Phase 7 — Rate limiting (optional)
 - [ ] Phase 8 — Redis cache (optional)
 - [ ] Phase 9 — Bulk export (optional)

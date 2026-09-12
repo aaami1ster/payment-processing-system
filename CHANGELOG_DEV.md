@@ -6,6 +6,20 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: harden phase 6 coverage and submission delivery`
+
+#### Added
+
+- Cover Rule 2 races and concurrent idempotency with Testcontainers (`ConcurrencyIT`)
+- Enforce JaCoCo line coverage ≥ 75% on `mvn verify`
+- Include `*IT` suites in Surefire so outbox/concurrency Testcontainers tests run on verify
+- Add domain UML (`docs/uml-domain.md`) and end-to-end `scripts/demo.sh`
+- Complete root README to the challenge template (architecture, API, tests, coverage, design decisions)
+
+#### Changed
+
+- Mark Phase 6 plan tasks T6.1–T6.4 done
+
 ### MR: `feat: add phase 5 API polish and observability`
 
 #### Added
