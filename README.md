@@ -63,6 +63,7 @@ Open [`bruno/`](bruno/) in [Bruno](https://www.usebruno.com/) (YAML / OpenCollec
 ```bash
 cd bruno && npx @usebruno/cli run health --env Local
 cd bruno && npx @usebruno/cli run user --env Local
+cd bruno && npx @usebruno/cli run transaction --env Local
 ```
 
 ## Users API (Phase 1)
@@ -113,10 +114,71 @@ In-process strategy objects under `domain/fraud` (no Drools). The service gather
 | `HIGH_RISK_CATEGORY` | category ∈ high-risk set (`GAMBLING`, `CRYPTO`, `CASH_ADVANCE`, `ADULT`) and `amount > 5_000` | `DECLINE` |
 | `NEW_USER_HIGH_AMOUNT` | `amount > 5_000` and user younger than 30 days | `FLAG` |
 
-`FLAGGED` is a **successful** authorization that needs review (HTTP `201` once transactions are wired). Business `DECLINED` is not an infrastructure failure — Postgres outages map to `503`, not a fabricated decline. High-risk categories and thresholds live in `fraud.*` (`FraudProperties`). Details: [docs/low-level-design.md](docs/low-level-design.md) (Fraud Detection Engine, Rule 2).
+`FLAGGED` is a **successful** authorization that needs review (HTTP `201`). Business `DECLINED` is not an infrastructure failure — Postgres outages map to `503`, not a fabricated decline. High-risk categories and thresholds live in `fraud.*` (`FraudProperties`). Details: [docs/low-level-design.md](docs/low-level-design.md) (Fraud Detection Engine, Rule 2).
 
 ```bash
 mvn -q -Dtest='*Fraud*,*Rule*,*VelocityWindow*' test
+```
+
+## Process transaction (Phase 3)
+
+**Core guarantee:** no `APPROVED` / `FLAGGED` / `DECLINED` is returned unless the transaction **and** its audit outbox row were committed in PostgreSQL. Mongo publish is async (Phase 4); outbox may stay `PENDING`.
+
+Base path: `/api/v1/transactions`. Optional header: `Idempotency-Key` (fingerprint = SHA-256 of `userId|merchantId|amount|category`).
+
+```bash
+# 1) Create user
+USER_ID=$(curl -s -X POST http://localhost:8080/api/v1/users \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"payer@example.com"}' | jq -r '.data.id')
+
+# 2) Small amount → APPROVED (HTTP 201)
+curl -s -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: demo-key-1" \
+  -d "{\"amount\":100.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
+
+# 3) High amount without limit → DECLINED (still HTTP 201; errors=[])
+curl -s -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -d "{\"amount\":12000.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
+
+# 4) Raise pre-approved limit, retry high amount → FLAGGED for new users (Rule 4), still 201
+curl -s -X PATCH "http://localhost:8080/api/v1/users/$USER_ID" \
+  -H 'Content-Type: application/json' \
+  -d '{"preApprovedTransactionLimit":15000}'
+
+curl -s -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -d "{\"amount\":12000.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
+
+# 5) Replay same Idempotency-Key + body → same transactionId
+curl -s -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: demo-key-1" \
+  -d "{\"amount\":100.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
+
+# 6) Verify durable rows (outbox PENDING is OK until Phase 4)
+docker compose exec postgres psql -U payments -d payments \
+  -c "SELECT id, status, amount FROM transactions ORDER BY created_at DESC LIMIT 5;"
+docker compose exec postgres psql -U payments -d payments \
+  -c "SELECT transaction_id, status FROM audit_outbox ORDER BY id DESC LIMIT 5;"
+```
+
+| Outcome | HTTP | Notes |
+| ------- | ---- | ----- |
+| Processed (`APPROVED`/`FLAGGED`/`DECLINED`) | `201` | Business status in `data.status`; `errors` = `[]` |
+| Unknown user | `404` | `USER_NOT_FOUND` |
+| Same key, different payload | `409` | `IDEMPOTENCY_CONFLICT` |
+| Invalid body | `400` | `VALIDATION_ERROR` |
+| PostgreSQL / commit failure | `503` | `SERVICE_UNAVAILABLE` |
+
+Authorize path loads the user with `SELECT … FOR UPDATE` inside `ProcessTransactionHandler` — never via `GetUserHandler`.
+
+```bash
+cd bruno && npx @usebruno/cli run user --env Local
+cd bruno && npx @usebruno/cli run transaction --env Local
+# GET / list / audit requests may 404 until later phases — POST + idempotency + error cases are Phase 3
 ```
 
 ## Local Maven build

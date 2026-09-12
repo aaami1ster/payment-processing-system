@@ -3,7 +3,9 @@ package com.example.payment.api.exception;
 import com.example.payment.api.response.ApiError;
 import com.example.payment.api.response.ApiResponse;
 import com.example.payment.common.exception.DuplicateEmailException;
+import com.example.payment.common.exception.IdempotencyConflictException;
 import com.example.payment.common.exception.InvalidRequestException;
+import com.example.payment.common.exception.ServiceUnavailableException;
 import com.example.payment.common.exception.UserNotFoundException;
 import com.example.payment.common.logging.LogFactory;
 import com.example.payment.common.web.RequestIdFilter;
@@ -12,9 +14,11 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import org.slf4j.Logger;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.TransactionException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -45,6 +49,31 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.failure(
                         "Email already registered",
                         ApiError.of("EMAIL_ALREADY_EXISTS", "email", ex.getMessage()),
+                        RequestIdFilter.resolve(request)));
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIdempotencyConflict(
+            IdempotencyConflictException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.failure(
+                        "Idempotency conflict",
+                        ApiError.of("IDEMPOTENCY_CONFLICT", ex.getMessage()),
+                        RequestIdFilter.resolve(request)));
+    }
+
+    @ExceptionHandler({
+            ServiceUnavailableException.class,
+            DataAccessException.class,
+            TransactionException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleServiceUnavailable(
+            Exception ex, HttpServletRequest request) {
+        log.warn("Service unavailable: {}", ex.toString());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.failure(
+                        "Service temporarily unavailable",
+                        ApiError.of("SERVICE_UNAVAILABLE", "Unable to persist transaction"),
                         RequestIdFilter.resolve(request)));
     }
 
