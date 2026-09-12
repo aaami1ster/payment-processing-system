@@ -22,7 +22,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import tools.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 @ExtendWith(MockitoExtension.class)
 class RedisUserQueryCacheTest {
@@ -42,8 +50,8 @@ class RedisUserQueryCacheTest {
         UserCacheProperties properties = new UserCacheProperties();
         properties.setTtlSeconds(30);
         properties.setKeyPrefix("user:");
-        cache = new RedisUserQueryCache(
-                redisTemplate, JsonMapper.builder().build(), properties, new SimpleMeterRegistry());
+        ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        cache = new RedisUserQueryCache(redisTemplate, mapper, properties, new SimpleMeterRegistry());
     }
 
     @Test

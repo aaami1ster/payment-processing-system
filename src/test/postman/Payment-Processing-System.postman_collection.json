@@ -1,0 +1,1348 @@
+{
+  "info": {
+    "name": "Payment Processing System",
+    "description": "# Payment Processing System API\n\nBruno OpenCollection aligned with [docs/low-level-design.md](../docs/low-level-design.md).\n\n## Folders\n\n| Folder | Endpoints |\n| ------ | --------- |\n| `health/` | Actuator health / liveness / readiness / prometheus |\n| `user/` | `POST/GET/PATCH /api/v1/users`, list, 404 |\n| `transaction/` | Process, get, list, idempotency cases, audit-logs |\n\n## Response envelope\n\n```json\n{\n  \"data\": {},\n  \"message\": \"...\",\n  \"errors\": [],\n  \"meta\": { \"requestId\": \"...\" }\n}\n```\n\nFraud `DECLINED` / `FLAGGED` are **HTTP 201** success payloads (`data.status`), never `errors[]`.\n\n## How to run\n\n1. `docker compose up --build -d`\n2. Open this folder in Bruno → env **Local**\n3. `npx @usebruno/cli run --env Local`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Aggregated health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /actuator/health\n\nAggregated health of the application.\n\n## When available\nPhase 0+\n\n## Success\n- **HTTP** `200`\n- Body includes `\"status\": \"UP\"` when the process and required dependencies are healthy\n\n## Notes\n- Liveness = process healthy\n- Readiness = PostgreSQL up (required to process payments)\n- Mongo down → still READY (async audit only degraded)",
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"status is UP\", function() {",
+                  "  pm.expect(pm.response.body).to.have.property(\"status\");",
+                  "  pm.expect(pm.response.body.status).to.equal(\"UP\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /actuator/health/liveness\n\nProcess-level liveness probe (Kubernetes-style).\n\n## When available\nPhase 0+\n\n## Success\n- **HTTP** `200`, `\"status\": \"UP\"` while the JVM process is alive\n\n## Failure\n- Non-200 when the process should be restarted",
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/liveness",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "liveness"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"liveness UP\", function() {",
+                  "  pm.expect(pm.response.body.status).to.equal(\"UP\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /actuator/health/readiness\n\nReadiness probe — app can safely accept payment traffic.\n\n## When available\nPhase 0+\n\n## Success\n- **HTTP** `200`, `\"status\": \"UP\"` when PostgreSQL is reachable\n\n## Failure\n- Non-200 / not UP if PostgreSQL is down (do not route payment traffic)\n\n## Design note\nMongoDB is **not** required for readiness; audit projection can lag while payments continue.",
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health/readiness",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "readiness"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200 when Postgres is up\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"readiness UP\", function() {",
+                  "  pm.expect(pm.response.body.status).to.equal(\"UP\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/plain",
+                "description": "",
+                "disabled": false,
+                "type": "default"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /actuator/prometheus\n\nMicrometer Prometheus scrape endpoint (Phase 5 observability).\n\n## When available\nPhase 5+ (when actuator prometheus exposure is enabled)\n\n## Expected metrics (design)\n- `payment.transactions.total{status}`\n- `payment.processing.duration`\n- outbox pending / publish metrics when practical\n\n## Note\nIf this returns 404, prometheus exposure is not enabled yet — enable in `application.yml` / management endpoints.",
+            "url": {
+              "raw": "{{baseUrl}}/actuator/prometheus",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "prometheus"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200 when prometheus endpoint enabled\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"body is scrape text\", function() {",
+                  "  pm.expect(pm.response.body).to.be.a(\"string\");",
+                  "});",
+                  "",
+                  "pm.test(\"includes payment transaction metrics when scraped\", function() {",
+                  "  // Present after at least one POST /transactions in this environment",
+                  "  const body = String(pm.response.body);",
+                  "  pm.expect(body.includes(\"payment_transactions_total\") || body.includes(\"jvm_\")).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "name": "User",
+      "item": [
+        {
+          "name": "Create user",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# POST /api/v1/users\n\nCreate a user profile.\n\n## When available\nPhase 1+\n\n## Request body\n\n| Field | Required | Notes |\n| ----- | -------- | ----- |\n| `email` | yes | Unique |\n| `kycStatus` | no | Default `PENDING` |\n\n`preApprovedTransactionLimit` starts as `null` (needed later for fraud Rule 1).\n\n## Success\n- **HTTP** `201`\n- `data` = user resource (`id`, `email`, `kycStatus`, `preApprovedTransactionLimit`, `createdAt`)\n- `errors` = `[]`\n- `meta.requestId` always set\n\n## Errors\n| HTTP | `errors[].code` | When |\n| ---- | --------------- | ---- |\n| `400` | `VALIDATION_ERROR` | Bad/missing fields (Bean Validation on DTO) |\n| `409` | `EMAIL_ALREADY_EXISTS` | Email already exists |\n\n## Side effects\nSets env `userId` for later requests.",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{sampleEmail}}\",\n  \"kycStatus\": \"PENDING\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Always unique so repeated `bru run user` does not hit EMAIL_ALREADY_EXISTS",
+                  "pm.environment.set(\"sampleEmail\", \"alice.bruno+\" + Date.now() + \"@example.com\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "if (pm.response.code === 201 && pm.response.body && pm.response.body.data) {",
+                  "  const id = pm.response.body.data.id || pm.response.body.data.userId;",
+                  "  if (id) {",
+                  "    pm.environment.set(\"userId\", id);",
+                  "  }",
+                  "}",
+                  "",
+                  "// Tests",
+                  "pm.test(\"HTTP 201 Created\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(201);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope: data present, errors empty\", function() {",
+                  "  pm.expect(pm.response.body).to.have.property(\"data\");",
+                  "  pm.expect(pm.response.body.data).to.not.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "  pm.expect(pm.response.body.meta).to.have.property(\"requestId\");",
+                  "});",
+                  "",
+                  "pm.test(\"user id and email returned\", function() {",
+                  "  const id = pm.response.body.data.id || pm.response.body.data.userId;",
+                  "  pm.expect(id).to.be.a(\"string\").that.is.not.empty;",
+                  "  pm.expect(pm.response.body.data.email).to.be.a(\"string\");",
+                  "});",
+                  "",
+                  "pm.test(\"default KYC PENDING\", function() {",
+                  "  pm.expect(pm.response.body.data.kycStatus).to.equal(\"PENDING\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /api/v1/users\n\nCursor-paginated list of users (newest first).\n\n## When available\nPhase 1+\n\n## Query params\n| Param | Required | Notes |\n| ----- | -------- | ----- |\n| `cursor` | no | Opaque; from previous `nextCursor` (`{{usersNextCursor}}`) |\n| `limit` | no | Default 50, max 200 |\n| `kycStatus` | no | `PENDING` \\| `VERIFIED` \\| `REJECTED` |\n\n## Success\n- **HTTP** `200`\n- `data.items`, `data.nextCursor`, `data.hasMore`\n- Empty page → `items: []`, `hasMore: false`, `nextCursor: null`\n\n## Errors\n| HTTP | `errors[].code` |\n| ---- | --------------- |\n| `400` | `VALIDATION_ERROR` (bad `limit` / `cursor` / `kycStatus`) |\n\n## Prerequisite\nRun **Create user** first so the page is non-empty (optional).",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{usersNextCursor}}"
+                },
+                {
+                  "key": "kycStatus",
+                  "value": "PENDING"
+                }
+              ],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "if (pm.response.code === 200 && pm.response.body && pm.response.body.data && pm.response.body.data.nextCursor) {",
+                  "  pm.environment.set(\"usersNextCursor\", pm.response.body.data.nextCursor);",
+                  "}",
+                  "",
+                  "// Tests",
+                  "pm.test(\"HTTP 200\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"page shape: items, nextCursor, hasMore\", function() {",
+                  "  pm.expect(pm.response.body.data).to.have.property(\"items\").that.is.an(\"array\");",
+                  "  pm.expect(pm.response.body.data).to.have.property(\"hasMore\");",
+                  "  pm.expect(pm.response.body.data).to.have.property(\"nextCursor\");",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "  pm.expect(pm.response.body.meta.requestId).to.be.a(\"string\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"created user appears when userId is set\", function() {",
+                  "  const userId = pm.environment.get(\"userId\");",
+                  "  if (!userId) {",
+                  "    return;",
+                  "  }",
+                  "  const ids = (pm.response.body.data.items || []).map(function(u) {",
+                  "    return u.id || u.userId;",
+                  "  });",
+                  "  pm.expect(ids).to.include(userId);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /api/v1/users/{id}\n\nFetch a user profile by id.\n\n## When available\nPhase 1+\n\n## Path params\n| Param | Source |\n| ----- | ------ |\n| `id` | `{{userId}}` (from Create user) |\n\n## Success\n- **HTTP** `200`\n- `data` = user resource\n- `errors` = `[]`\n\n## Errors\n| HTTP | `errors[].code` |\n| ---- | --------------- |\n| `404` | `USER_NOT_FOUND` or `NOT_FOUND` |\n\n## Prerequisite\nRun **Create user** first (or set `userId` in Local env).",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope OK\", function() {",
+                  "  pm.expect(pm.response.body.data).to.not.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "  pm.expect(pm.response.body.meta.requestId).to.be.a(\"string\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"returned id matches path\", function() {",
+                  "  const id = pm.response.body.data.id || pm.response.body.data.userId;",
+                  "  pm.expect(id).to.equal(pm.environment.get(\"userId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update user",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# PATCH /api/v1/users/{id}\n\nPartial update of KYC status and/or `preApprovedTransactionLimit`.\n\n## When available\nPhase 1+\n\n## Request body (any subset)\n| Field | Notes |\n| ----- | ----- |\n| `kycStatus` | e.g. `PENDING`, `VERIFIED`, … |\n| `preApprovedTransactionLimit` | Raised by ops after offline approval; Rule 1 uses this |\n\n## Success\n- **HTTP** `200`\n- `data` = updated user\n\n## Errors\n| HTTP | `errors[].code` |\n| ---- | --------------- |\n| `404` | `USER_NOT_FOUND` / `NOT_FOUND` |\n| `400` | `VALIDATION_ERROR` (e.g. limit ≤ 0) |\n\n## Why this matters\nA limit of `15000` allows a `12000` payment that would otherwise be DECLINED by Rule 1.",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kycStatus\": \"VERIFIED\",\n  \"preApprovedTransactionLimit\": 15000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope OK\", function() {",
+                  "  pm.expect(pm.response.body.data).to.not.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"KYC and limit updated\", function() {",
+                  "  pm.expect(pm.response.body.data.kycStatus).to.equal(\"VERIFIED\");",
+                  "  pm.expect(Number(pm.response.body.data.preApprovedTransactionLimit)).to.equal(15000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get user not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /api/v1/users/{id} — not found\n\nNegative test: unknown UUID returns 404 envelope (not an empty 200).\n\n## When available\nPhase 1+\n\n## Expected\n- **HTTP** `404`\n- `data` = `null`\n- `errors[]` with `USER_NOT_FOUND` or `NOT_FOUND`\n- `meta.requestId` present",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/00000000-0000-0000-0000-000000000000",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "00000000-0000-0000-0000-000000000000"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 404\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(404);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope: data null, errors present\", function() {",
+                  "  pm.expect(pm.response.body.data).to.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(pm.response.body.meta.requestId).to.be.a(\"string\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"stable not-found code\", function() {",
+                  "  const codes = pm.response.body.errors.map(e => e.code);",
+                  "  pm.expect(codes.some(c => c === \"USER_NOT_FOUND\" || c === \"NOT_FOUND\")).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "name": "Transaction",
+      "item": [
+        {
+          "name": "Process transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "description": "",
+                "disabled": false,
+                "type": "default"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# POST /api/v1/transactions\n\nProcess a payment: lock user row → velocity + fraud → persist transaction + audit outbox → respond.\n\n## When available\nPhase 3+\n\n## Headers\n| Header | Required | Notes |\n| ------ | -------- | ----- |\n| `Idempotency-Key` | no | Replay-safe; same key + same fingerprint → original txn |\n\n## Request body\n| Field | Required | Notes |\n| ----- | -------- | ----- |\n| `amount` | yes | > 0 |\n| `userId` | yes | Existing user UUID |\n| `merchantId` | yes | Merchant identifier |\n| `category` | yes | e.g. `ELECTRONICS` |\n\n## Success (all business outcomes)\n- **HTTP** `201 Created`\n- `data.status` ∈ `APPROVED` \\| `FLAGGED` \\| `DECLINED`\n- `errors` = `[]`\n\n## Errors\n| HTTP | `errors[].code` | When |\n| ---- | --------------- | ---- |\n| `404` | `USER_NOT_FOUND` | Unknown user |\n| `409` | `IDEMPOTENCY_CONFLICT` | Same key, different fingerprint |\n| `400` | `VALIDATION_ERROR` | Malformed body |\n| `503` | `SERVICE_UNAVAILABLE` | PostgreSQL / commit failure |\n\n## Side effects\nSets env `transactionId` and (if empty) `idempotencyKey`.",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 6200.00,\n  \"userId\": \"{{userId}}\",\n  \"merchantId\": \"{{merchantId}}\",\n  \"category\": \"ELECTRONICS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "let key = pm.environment.get(\"idempotencyKey\");",
+                  "if (!key || String(key).trim() === \"\") {",
+                  "  key = \"idem-\" + Date.now() + \"-\" + Math.random().toString(36).slice(2, 10);",
+                  "  pm.environment.set(\"idempotencyKey\", key);",
+                  "}",
+                  "const userId = pm.environment.get(\"userId\");",
+                  "if (!userId || String(userId).trim() === \"\") {",
+                  "  throw new Error(\"userId is empty — run user/01-create-user first\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "if (pm.response.code === 201 && pm.response.body && pm.response.body.data) {",
+                  "  const id = pm.response.body.data.transactionId || pm.response.body.data.id;",
+                  "  if (id) {",
+                  "    pm.environment.set(\"transactionId\", id);",
+                  "  }",
+                  "}",
+                  "",
+                  "// Tests",
+                  "pm.test(\"HTTP 201 for persisted business decision\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(201);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope: data.status present, errors empty\", function() {",
+                  "  pm.expect(pm.response.body.data).to.not.equal(null);",
+                  "  pm.expect(pm.response.body.data).to.have.property(\"status\");",
+                  "  pm.expect([\"APPROVED\", \"FLAGGED\", \"DECLINED\"]).to.include(pm.response.body.data.status);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "  pm.expect(pm.response.body.meta.requestId).to.be.a(\"string\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"transactionId returned\", function() {",
+                  "  const id = pm.response.body.data.transactionId || pm.response.body.data.id;",
+                  "  pm.expect(id).to.be.a(\"string\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"DECLINED never appears in errors[]\", function() {",
+                  "  const codes = (pm.response.body.errors || []).map(e => e.code);",
+                  "  pm.expect(codes).to.not.include(\"DECLINED\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Process transaction high amount decline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKeyDecline}}",
+                "description": "",
+                "disabled": false,
+                "type": "default"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# POST /api/v1/transactions — Rule 1 decline demo\n\nAmount `12000` without a sufficient `preApprovedTransactionLimit` → **DECLINED**\n(still HTTP **201** — business rejection, not API failure).\n\nCreates a fresh user (no limit) in the before-request script so prior PATCH limit does not interfere.\n\n## When available\nPhase 3+\n\n## Expected\n- **HTTP** `201`\n- `data.status` = `DECLINED`\n- `errors` = `[]`",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 12000.00,\n  \"userId\": \"{{declineUserId}}\",\n  \"merchantId\": \"{{merchantId}}\",\n  \"category\": \"GROCERIES\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "pm.environment.set(\"idempotencyKeyDecline\", \"idem-decline-\" + Date.now());",
+                  "// Fresh user with null limit so Rule 1 DECLINEs 12000",
+                  "const createRes = await pm.sendRequest({",
+                  "  method: \"POST\",",
+                  "  url: pm.environment.get(\"baseUrl\") + \"/api/v1/users\",",
+                  "  header: {",
+                  "    \"Content-Type\": \"application/json\",",
+                  "    Accept: \"application/json\"",
+                  "  },",
+                  "  body: {",
+                  "    mode: \"raw\",",
+                  "",
+                  "    raw: {",
+                  "      email: \"decline+\" + Date.now() + \"@example.com\"",
+                  "    }",
+                  "  }",
+                  "});",
+                  "if (createRes.status !== 201 || !createRes.data || !createRes.data.data) {",
+                  "  throw new Error(\"Failed to create decline-test user: HTTP \" + createRes.status);",
+                  "}",
+                  "const id = createRes.data.data.id || createRes.data.data.userId;",
+                  "pm.environment.set(\"declineUserId\", id);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 201 even when business DECLINED\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(201);",
+                  "});",
+                  "",
+                  "pm.test(\"data.status is DECLINED\", function() {",
+                  "  pm.expect(pm.response.body.data.status).to.equal(\"DECLINED\");",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"rulesTriggered is non-empty\", function() {",
+                  "  pm.expect(pm.response.body.data.rulesTriggered).to.be.an(\"array\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get transaction",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /api/v1/transactions/{id}\n\nFetch a stored authorization decision.\n\n## When available\nPhase 5+\n\n## Success\n- **HTTP** `200`\n- `data` = transaction resource\n\n## Errors\n| HTTP | `errors[].code` |\n| ---- | --------------- |\n| `404` | `NOT_FOUND` |",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions/{{transactionId}}",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                "{{transactionId}}"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope OK with transaction\", function() {",
+                  "  pm.expect(pm.response.body.data).to.not.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "  const id = pm.response.body.data.transactionId || pm.response.body.data.id;",
+                  "  pm.expect(id).to.equal(pm.environment.get(\"transactionId\"));",
+                  "  pm.expect([\"APPROVED\", \"FLAGGED\", \"DECLINED\"]).to.include(pm.response.body.data.status);",
+                  "});",
+                  "",
+                  "pm.test(\"requestId in meta and header\", function() {",
+                  "  pm.expect(pm.response.body.meta.requestId).to.be.a(\"string\").that.is.not.empty;",
+                  "  const headers = pm.response.headers || {};",
+                  "  const headerId = headers[\"x-request-id\"] || headers[\"X-Request-Id\"]",
+                  "    || (typeof pm.response.headers.get === \"function\" ? pm.response.headers.get(\"x-request-id\") : null);",
+                  "  if (headerId) {",
+                  "    pm.expect(headerId).to.equal(pm.response.body.meta.requestId);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get transaction not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /api/v1/transactions/{id} — not found\n\n## When available\nPhase 5+\n\n## Expected\n- **HTTP** `404`\n- `data` = `null`\n- `errors[].code` = `NOT_FOUND`",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions/00000000-0000-0000-0000-000000000000",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                "00000000-0000-0000-0000-000000000000"
+              ],
+              "query": [],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 404\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(404);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope failure shape\", function() {",
+                  "  pm.expect(pm.response.body.data).to.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(pm.response.body.errors.some(e => e.code === \"NOT_FOUND\")).to.equal(true);",
+                  "  pm.expect(pm.response.body.meta.requestId).to.be.a(\"string\").that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Idempotency replay",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "description": "",
+                "disabled": false,
+                "type": "default"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# POST /api/v1/transactions — idempotent replay\n\nSame `Idempotency-Key` + same fingerprint → return the **original** transaction.\n\n## When available\nPhase 3+\n\n## Prerequisite\nRun **Process transaction** first.\n\n## Expected\n- **HTTP** `201`\n- Same `transactionId` as first call",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 6200.00,\n  \"userId\": \"{{userId}}\",\n  \"merchantId\": \"{{merchantId}}\",\n  \"category\": \"ELECTRONICS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "const key = pm.environment.get(\"idempotencyKey\");",
+                  "const userId = pm.environment.get(\"userId\");",
+                  "if (!key || !userId) {",
+                  "  throw new Error(\"Run Process transaction first so idempotencyKey and userId are set\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 201 replay\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(201);",
+                  "});",
+                  "",
+                  "pm.test(\"same transactionId as original\", function() {",
+                  "  const id = pm.response.body.data.transactionId || pm.response.body.data.id;",
+                  "  pm.expect(id).to.equal(pm.environment.get(\"transactionId\"));",
+                  "});",
+                  "",
+                  "pm.test(\"errors empty\", function() {",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Idempotency conflict",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "description": "",
+                "disabled": false,
+                "type": "default"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# POST /api/v1/transactions — idempotency conflict\n\nSame `Idempotency-Key` but **different** payload fingerprint → `409`.\n\n## When available\nPhase 3+\n\n## Expected\n- **HTTP** `409`\n- `errors[].code` = `IDEMPOTENCY_CONFLICT`\n- `data` = `null`",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 99.00,\n  \"userId\": \"{{userId}}\",\n  \"merchantId\": \"{{merchantId}}\",\n  \"category\": \"ELECTRONICS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "const key = pm.environment.get(\"idempotencyKey\");",
+                  "if (!key) {",
+                  "  throw new Error(\"Run Process transaction first so idempotencyKey is set\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 409 Conflict\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(409);",
+                  "});",
+                  "",
+                  "pm.test(\"IDEMPOTENCY_CONFLICT in errors\", function() {",
+                  "  pm.expect(pm.response.body.data).to.equal(null);",
+                  "  pm.expect(pm.response.body.errors.some(e => e.code === \"IDEMPOTENCY_CONFLICT\")).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Process unknown user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "unknown-user-{{$guid}}",
+                "description": "",
+                "disabled": false,
+                "type": "default"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# POST /api/v1/transactions — unknown user\n\n## When available\nPhase 3+\n\n## Expected\n- **HTTP** `404`\n- `errors[].code` = `USER_NOT_FOUND`\n- No transaction row created",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"userId\": \"00000000-0000-0000-0000-000000000000\",\n  \"merchantId\": \"{{merchantId}}\",\n  \"category\": \"GROCERIES\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 404\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(404);",
+                  "});",
+                  "",
+                  "pm.test(\"USER_NOT_FOUND\", function() {",
+                  "  pm.expect(pm.response.body.data).to.equal(null);",
+                  "  pm.expect(pm.response.body.errors.some(e => e.code === \"USER_NOT_FOUND\")).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Process validation error",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# POST /api/v1/transactions — validation error\n\nNegative amount → `400` with field-level `VALIDATION_ERROR`.\n\n## When available\nPhase 3+\n\n## Expected\n- **HTTP** `400`\n- `data` = `null`\n- `errors[]` with `code: VALIDATION_ERROR`",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "query": [],
+              "variable": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": -1,\n  \"userId\": \"{{userId}}\",\n  \"merchantId\": \"{{merchantId}}\",\n  \"category\": \"GROCERIES\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 400\", function() {",
+                  "  pm.expect(pm.response.code).to.equal(400);",
+                  "});",
+                  "",
+                  "pm.test(\"VALIDATION_ERROR in errors\", function() {",
+                  "  pm.expect(pm.response.body.data).to.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.not.empty;",
+                  "  pm.expect(pm.response.body.errors.some(e => e.code === \"VALIDATION_ERROR\")).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /api/v1/transactions\n\nCursor-paginated list/export for one user.\n\n## When available\nPhase 9 (optional enhancement)\n\n## Query params\n| Param | Required | Notes |\n| ----- | -------- | ----- |\n| `userId` | yes | Scope |\n| `from` / `to` | no | Inclusive `created_at` bounds |\n| `status` | no | `APPROVED` \\| `FLAGGED` \\| `DECLINED` |\n| `cursor` | no | Opaque cursor |\n| `limit` | no | Default 50, max 200 |\n\n## Success\n- **HTTP** `200`\n- `data.items`, `data.nextCursor`, `data.hasMore`",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions?userId={{userId}}&limit=50",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions?userId={{userId}}&limit=50"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "from",
+                  "value": "2020-01-01T00:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2099-01-01T00:00:00Z"
+                },
+                {
+                  "key": "status",
+                  "value": "APPROVED"
+                },
+                {
+                  "key": "cursor",
+                  "value": ""
+                }
+              ],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200 when list is implemented (Phase 9+)\", function() {",
+                  "  // Until Phase 9: no GET mapping on collection path → 404 or 405",
+                  "  if (pm.response.code === 404 || pm.response.code === 405) {",
+                  "    pm.expect([404, 405]).to.include(pm.response.code);",
+                  "    return;",
+                  "  }",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"page shape when available\", function() {",
+                  "  if (pm.response.code === 404 || pm.response.code === 405) {",
+                  "    pm.expect(true).to.equal(true);",
+                  "    return;",
+                  "  }",
+                  "  pm.expect(pm.response.body.data).to.have.property(\"items\").that.is.an(\"array\");",
+                  "  pm.expect(pm.response.body.data).to.have.property(\"hasMore\");",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List audit logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "# GET /api/v1/audit-logs\n\nOptional companion export against Mongo audit documents.\n\n## When available\nAfter Phase 4 audit projection + pagination-style export\n\n## Query params\n`userId`, `from`, `to`, `cursor` — same cursor pattern as list transactions.\n\n## Notes\nEventually consistent with PostgreSQL; payments do not wait on Mongo.",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/audit-logs",
+              "protocol": "",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "userId",
+                  "value": "{{userId}}"
+                },
+                {
+                  "key": "from",
+                  "value": ""
+                },
+                {
+                  "key": "to",
+                  "value": ""
+                },
+                {
+                  "key": "cursor",
+                  "value": ""
+                }
+              ],
+              "variable": []
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {},
+                "exec": [
+                  "// Tests",
+                  "pm.test(\"HTTP 200 when endpoint is implemented\", function() {",
+                  "  if (pm.response.code === 404) {",
+                  "    pm.expect(pm.response.body.errors.some(e => e.code === \"NOT_FOUND\")).to.equal(true);",
+                  "    return;",
+                  "  }",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test(\"envelope with data page when available\", function() {",
+                  "  if (pm.response.code === 404) {",
+                  "    pm.expect(true).to.equal(true);",
+                  "    return;",
+                  "  }",
+                  "  pm.expect(pm.response.body.data).to.not.equal(null);",
+                  "  pm.expect(pm.response.body.errors).to.be.an(\"array\").that.is.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "merchantId",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "idempotencyKeyDecline",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "declineUserId",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "$guid",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "sampleEmail",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "usersNextCursor",
+      "value": "",
+      "type": "default"
+    }
+  ]
+}

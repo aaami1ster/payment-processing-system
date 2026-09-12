@@ -12,4 +12,107 @@
         <packageUrl regex="true">^pkg:maven/org\.eclipse\.angus/angus-activation@.*$</packageUrl>
         <cpe>cpe:/a:eclipse:angus_mail</cpe>
     </suppress>
+
+    <!--
+      Boot 3.x / Framework 6.2.19 virtual patches.
+      OSS fix is Framework 7.0.9+ (Boot 4.1.x on develop/main). Framework 6.2.20+ is not
+      published to Maven Central for community consumers.
+      This app: Spring MVC @RestController JSON APIs only — no WebFlux, RSocket, WebMvc.fn,
+      SSE, XsltView, or user-supplied SpEL.
+    -->
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47884 (XsltView SSRF/RCE): no XsltView / XSLT view resolution;
+            controllers return JSON via @RestController only.
+        </notes>
+        <cve>CVE-2026-47884</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-59313 (SSE CRLF): no WebMvc.fn / ServerResponse.sse(...);
+            annotated @RestController / @RestControllerAdvice only.
+        </notes>
+        <cve>CVE-2026-59313</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47885 (WebFlux PartEventHttpMessageReader maxPartSize):
+            application does not use Spring WebFlux.
+        </notes>
+        <cve>CVE-2026-47885</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47886 (SpEL power-operator DoS): application does not evaluate
+            user-supplied SpEL expressions.
+        </notes>
+        <cve>CVE-2026-47886</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47888 (RSocket SETUP memory leak): application does not use
+            Spring RSocket.
+        </notes>
+        <cve>CVE-2026-47888</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47889 (WebFlux Jetty cookie SameSite): no WebFlux / Jetty adapter;
+            embedded Tomcat + Spring MVC only.
+        </notes>
+        <cve>CVE-2026-47889</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47890 (SSE + view fragments stream corruption): application does
+            not use Server-Sent Events or view fragments.
+        </notes>
+        <cve>CVE-2026-47890</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47891 (WebFlux Aalto XML maxInMemorySize): application does not
+            use Spring WebFlux XML parsing.
+        </notes>
+        <cve>CVE-2026-47891</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47892 (WebFlux functional endpoint header-predicate bypass):
+            application does not use WebFlux RouterFunction / functional endpoints.
+        </notes>
+        <cve>CVE-2026-47892</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47893 (WebFlux WebSocket exception reason headers): application
+            does not use Spring WebFlux WebSocket.
+        </notes>
+        <cve>CVE-2026-47893</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-59282 (data-binding property-path DoS): APIs bind only via
+            @RequestBody DTOs and typed @RequestParam — no open WebDataBinder / @ModelAttribute
+            property-path binding from untrusted input.
+        </notes>
+        <cve>CVE-2026-59282</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-59283 (SpEL SimpleEvaluationContext compiler bypass): application
+            does not evaluate SpEL against user-controlled expressions.
+        </notes>
+        <cve>CVE-2026-59283</cve>
+    </suppress>
+
+    <!-- log4j-api alone is not the Log4j 1.x bridge layout named in the advisory -->
+    <suppress>
+        <notes>
+            False positive / non-use CVE-2026-34479 (Log4j1XmlLayout): classpath has log4j-api
+            via log4j-to-slf4j only; no log4j-1.2-api bridge / Log4j1XmlLayout usage. Logging is
+            Logback + logstash-logback-encoder.
+        </notes>
+        <cve>CVE-2026-34479</cve>
+    </suppress>
 </suppressions>

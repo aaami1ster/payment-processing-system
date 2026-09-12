@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -27,8 +27,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Phase 8: query-side Redis cache for GET /users; authorize path stays on PostgreSQL FOR UPDATE.
@@ -40,12 +40,6 @@ import tools.jackson.databind.ObjectMapper;
         "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
         "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
         "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-        "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-        "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"
 })
 class UserCacheIT {
 
@@ -66,7 +60,7 @@ class UserCacheIT {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.mongodb.uri", () -> "mongodb://localhost:27017/unused");
+        registry.add("spring.data.mongodb.uri", () -> "mongodb://localhost:27017/unused");
         registry.add("payment.outbox.publisher.enabled", () -> "false");
         registry.add("payment.cache.user.enabled", () -> "true");
         registry.add("payment.cache.user.ttl-seconds", () -> "60");
@@ -75,13 +69,7 @@ class UserCacheIT {
         registry.add("spring.autoconfigure.exclude", () -> String.join(",",
                 "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
                 "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
-                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-                "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-                "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"));
+                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration"));
     }
 
     @Autowired
@@ -183,6 +171,6 @@ class UserCacheIT {
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode root = objectMapper.readTree(create.getResponse().getContentAsString());
-        return root.get("data").get("id").asString();
+        return root.get("data").get("id").asText();
     }
 }

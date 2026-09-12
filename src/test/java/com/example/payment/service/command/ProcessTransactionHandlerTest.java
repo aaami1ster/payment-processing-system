@@ -49,7 +49,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
-import tools.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 @ExtendWith(MockitoExtension.class)
 class ProcessTransactionHandlerTest {
@@ -92,7 +93,7 @@ class ProcessTransactionHandlerTest {
                 properties,
                 new UserMapper(),
                 new TransactionMapper(),
-                JsonMapper.builder().build(),
+                new ObjectMapper().registerModule(new JavaTimeModule()),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 paymentMetrics,
                 new WebhookProperties());
