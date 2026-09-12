@@ -36,6 +36,9 @@ import tools.jackson.databind.ObjectMapper;
         "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
         "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
         "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
+        "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
+        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
+        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
         "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"
 })
 class UserApiTest {
@@ -52,13 +55,17 @@ class UserApiTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.data.mongodb.uri", () -> "mongodb://localhost:27017/unused");
+        registry.add("spring.mongodb.uri", () -> "mongodb://localhost:27017/unused");
+        registry.add("payment.outbox.publisher.enabled", () -> "false");
         registry.add("spring.autoconfigure.exclude", () -> String.join(",",
                 "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
                 "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
                 "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
                 "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
                 "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
+                "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
+                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
+                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
                 "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"));
     }
 

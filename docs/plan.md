@@ -611,19 +611,19 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T4.1 — Mongo audit document + repository**  
+- [x] **T4.1 — Mongo audit document + repository**  
   **Description:** Append-only insert; payload matches LLD JSON shape including userContext snapshot.  
   **Acceptance:** `_id = transactionId`; no upsert overwrite.
 
-- [ ] **T4.2 — OutboxPublisher worker**  
+- [x] **T4.2 — OutboxPublisher worker**  
   **Description:** Scheduled poll; SKIP LOCKED; mark PUBLISHED; backoff on failure.  
   **Acceptance:** Multi-instance safe claim; DuplicateKeyException treated as delivered.
 
-- [ ] **T4.3 — Resilience + metrics hooks**  
+- [x] **T4.3 — Resilience + metrics hooks**  
   **Description:** Timeouts/circuit on Mongo publish; basic counters for pending/failures if easy.  
   **Acceptance:** Mongo down does not fail POST /transactions.
 
-- [ ] **T4.4 — Publisher tests + README resilience note**  
+- [x] **T4.4 — Publisher tests + README resilience note**  
   **Description:** Testcontainers flows for success, outage, duplicate retry.  
   **Acceptance:** Tests green; README states PG is SoR and Mongo is projection.
 
@@ -1147,7 +1147,7 @@ Hard rules:
 - [x] Phase 1 — Users API
 - [ ] Phase 2 — Fraud domain
 - [x] Phase 3 — Process transaction MVP
-- [ ] Phase 4 — Mongo audit publisher
+- [x] Phase 4 — Mongo audit publisher
 - [ ] Phase 5 — API polish & observability
 - [ ] Phase 6 — Hardening & submission README
 - [ ] Phase 7 — Rate limiting (optional)

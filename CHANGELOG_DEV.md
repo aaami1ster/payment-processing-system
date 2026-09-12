@@ -6,6 +6,16 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 4 async mongo audit outbox`
+
+#### Added
+
+- Project audit logs to MongoDB via scheduled `OutboxPublisher` (`FOR UPDATE SKIP LOCKED`)
+- Insert immutable `audit_logs` documents with `_id = transactionId`; treat duplicate key as delivered
+- Retry with exponential backoff and Resilience4j circuit breaker around Mongo publish
+- Cover success, simulated Mongo outage + recovery, and duplicate delivery with Testcontainers
+- Document why outbox / why Mongo in the README
+
 ### MR: `feat: add phase 3 process transaction MVP`
 
 #### Added
