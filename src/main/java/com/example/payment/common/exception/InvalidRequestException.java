@@ -1,9 +1,12 @@
 package com.example.payment.common.exception;
 
+import lombok.Getter;
+
 /**
  * Input/use-case validation that is not covered (or not solely covered) by Bean Validation on API DTOs.
  * Mapped to HTTP 400 with {@code VALIDATION_ERROR}.
  */
+@Getter
 public class InvalidRequestException extends RuntimeException {
 
     private final String field;
@@ -17,13 +20,5 @@ public class InvalidRequestException extends RuntimeException {
         super(message);
         this.field = field;
         this.code = code != null ? code : "VALIDATION_ERROR";
-    }
-
-    public String getField() {
-        return field;
-    }
-
-    public String getCode() {
-        return code;
     }
 }

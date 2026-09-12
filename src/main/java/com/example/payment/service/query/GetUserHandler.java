@@ -6,19 +6,16 @@ import com.example.payment.data.postgres.repository.UserJpaRepository;
 import com.example.payment.domain.user.User;
 import com.example.payment.service.mapper.UserMapper;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class GetUserHandler {
 
     private final UserJpaRepository userRepository;
     private final UserMapper userMapper;
-
-    public GetUserHandler(UserJpaRepository userRepository, UserMapper userMapper) {
-        this.userRepository = userRepository;
-        this.userMapper = userMapper;
-    }
 
     @Transactional(readOnly = true)
     public User handle(UUID userId) {

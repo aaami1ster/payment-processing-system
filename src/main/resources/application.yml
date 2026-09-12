@@ -53,6 +53,19 @@ management:
       readiness:
         include: readinessState,db
 
+fraud:
+  high-risk-categories:
+    - GAMBLING
+    - CRYPTO
+    - CASH_ADVANCE
+    - ADULT
+  amount-without-approval-threshold: 10000
+  high-risk-amount-threshold: 5000
+  new-user-amount-threshold: 5000
+  velocity-threshold: 3
+  velocity-window-seconds: 60
+  new-user-max-age-days: 30
+
 logging:
   level:
     root: INFO
