@@ -6,6 +6,19 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 2 fraud detection domain`
+
+#### Added
+
+- Introduce an in-process fraud engine with four LLD rules (amount, velocity, high-risk category, new-user flag)
+- Add configurable high-risk categories and thresholds via `FraudProperties`
+- Cover rule aggregation and Rule 2/4 time boundaries with exhaustive unit tests (no Spring/DB)
+- Document fraud rule semantics and how to run domain tests in the README
+
+#### Changed
+
+- Adopt Lombok project-wide to cut boilerplate on handlers, domain user, exceptions, and JPA entities
+
 ### MR: `feat: add phase 1 user management API`
 
 #### Added
