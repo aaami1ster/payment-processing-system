@@ -27,8 +27,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * In-process Bucket4j limits for {@code /api/v1/**} keyed by userId, merchantId, and/or IP.
@@ -166,7 +166,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (node == null || node.isNull() || !node.isValueNode()) {
             return null;
         }
-        String value = node.asString();
+        String value = node.asText();
         return value == null || value.isBlank() ? null : value;
     }
 

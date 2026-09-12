@@ -18,7 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -30,8 +30,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -96,7 +96,7 @@ class WebhookOutboxIT {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add(
-                "spring.mongodb.uri",
+                "spring.data.mongodb.uri",
                 () -> mongo.getConnectionString()
                         + "/payments_audit?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000&socketTimeoutMS=2000");
         registry.add("payment.outbox.publisher.enabled", () -> "true");
@@ -153,9 +153,9 @@ class WebhookOutboxIT {
         assertThat(hook.requestId()).isEqualTo(transactionId);
         assertThat(hook.signature()).isEqualTo("sha256=" + WebhookClient.sign(WEBHOOK_SECRET, hook.body()));
         JsonNode payload = objectMapper.readTree(hook.body());
-        assertThat(payload.get("event").asString()).isEqualTo("TRANSACTION_APPROVED");
-        assertThat(payload.get("transactionId").asString()).isEqualTo(transactionId);
-        assertThat(payload.get("status").asString()).isEqualTo("APPROVED");
+        assertThat(payload.get("event").asText()).isEqualTo("TRANSACTION_APPROVED");
+        assertThat(payload.get("transactionId").asText()).isEqualTo(transactionId);
+        assertThat(payload.get("status").asText()).isEqualTo("APPROVED");
     }
 
     @Test
@@ -218,7 +218,7 @@ class WebhookOutboxIT {
                 .readTree(created.getResponse().getContentAsString())
                 .get("data")
                 .get("transactionId")
-                .asString();
+                .asText();
     }
 
     private String createUser(String email) throws Exception {
@@ -228,7 +228,7 @@ class WebhookOutboxIT {
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode root = objectMapper.readTree(create.getResponse().getContentAsString());
-        return root.get("data").get("id").asString();
+        return root.get("data").get("id").asText();
     }
 
     private String outboxStatus(String transactionId, String destination) {

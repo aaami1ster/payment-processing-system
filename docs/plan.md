@@ -30,7 +30,7 @@ Persistence unavailable → 503 — never fabricate a business decision
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Base package       | `com.example.payment`                                                                                                                           |
 | Main class         | `com.example.payment.PaymentProcessingApplication`                                                                                              |
-| Stack              | Java 21+, Spring Boot **4.1.1** (prefer 3.x; see note), Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo                  |
+| Stack              | Java 21+, Spring Boot **3.5.16** on this branch (virtual-patch OWASP path); **4.1.1** preferred on develop for OSS Framework fixes — see note |
 | Logging            | SLF4J + Logback via `LogFactory` only — never `System.out`                                                                                      |
 | Manual API tests   | Bruno collection in `[bruno/](bruno/)`                                                                                                          |
 | Request validation | Bean Validation on API DTOs + business guards in CQRS handlers (see LLD)                                                                        |
@@ -39,7 +39,7 @@ Persistence unavailable → 503 — never fabricate a business decision
 
 **Progress legend:** `- [ ]` not done · `- [x]` done
 
-**Spring Boot version:** Challenge asks for 3.x. We evaluated **3.5.16** (last OSS 3.x) plus dependency overrides (Tomcat, Jackson, PostgreSQL JDBC). That still leaves High/Critical **Spring Framework** CVEs (e.g. CVE-2026-47884, CVE-2026-59313): NVD requires Framework **6.2.20+**, which is **not on Maven Central** (6.2 ends at 6.2.19). The available OSS fix is Framework **7.0.9** via Boot **4.1.1** — so 4.x is used only because 3.x cannot clear the OWASP gate.
+**Spring Boot version:** Challenge asks for 3.x. **This branch** uses **3.5.16** (Framework 6.2.19) and clears High/Critical Spring Framework CVEs that need **6.2.20+** (not on Maven Central) via **virtual patching**: MVC `@RestController` JSON only — no WebFlux / RSocket / WebMvc.fn / SSE / `XsltView` / user SpEL — documented in `owasp-suppressions.xml`. Other High/Critical transitive deps are version-pinned in `pom.xml`. **Preferred production/demo path** remains Boot **4.1.x** on `develop`/`main` (Framework 7.x) for a cleaner SCA report without those suppressions — no commercial Spring license.
 
 ---
 

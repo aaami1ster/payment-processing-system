@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -29,8 +29,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * LLD concurrency regressions: Rule 2 velocity under {@code FOR UPDATE}, and concurrent
@@ -43,12 +43,6 @@ import tools.jackson.databind.ObjectMapper;
         "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
         "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
         "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-        "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-        "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"
 })
 class ConcurrencyIT {
 
@@ -65,18 +59,12 @@ class ConcurrencyIT {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> "8");
-        registry.add("spring.mongodb.uri", () -> "mongodb://localhost:27017/unused");
+        registry.add("spring.data.mongodb.uri", () -> "mongodb://localhost:27017/unused");
         registry.add("payment.outbox.publisher.enabled", () -> "false");
         registry.add("spring.autoconfigure.exclude", () -> String.join(",",
                 "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
                 "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
-                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-                "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-                "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"));
+                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration"));
     }
 
     @Autowired
@@ -111,18 +99,18 @@ class ConcurrencyIT {
         assertThat(results).hasSize(2);
         long successPaths = results.stream()
                 .filter(n -> {
-                    String status = n.get("data").get("status").asString();
+                    String status = n.get("data").get("status").asText();
                     return "APPROVED".equals(status) || "FLAGGED".equals(status);
                 })
                 .count();
         long velocityDeclines = results.stream()
                 .filter(n -> {
                     JsonNode data = n.get("data");
-                    if (!"DECLINED".equals(data.get("status").asString())) {
+                    if (!"DECLINED".equals(data.get("status").asText())) {
                         return false;
                     }
                     for (JsonNode rule : data.get("rulesTriggered")) {
-                        if ("VELOCITY".equals(rule.asString())) {
+                        if ("VELOCITY".equals(rule.asText())) {
                             return true;
                         }
                     }
@@ -168,13 +156,13 @@ class ConcurrencyIT {
 
         assertThat(results).hasSize(2);
         Set<String> transactionIds = results.stream()
-                .map(n -> n.get("data").get("transactionId").asString())
+                .map(n -> n.get("data").get("transactionId").asText())
                 .collect(Collectors.toSet());
         assertThat(transactionIds).hasSize(1);
         String transactionId = transactionIds.iterator().next();
 
         assertThat(results)
-                .allSatisfy(n -> assertThat(n.get("data").get("status").asString())
+                .allSatisfy(n -> assertThat(n.get("data").get("status").asText())
                         .isIn("APPROVED", "FLAGGED", "DECLINED"));
 
         Integer txnCount = jdbcTemplate.queryForObject(
@@ -259,6 +247,6 @@ class ConcurrencyIT {
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode root = objectMapper.readTree(create.getResponse().getContentAsString());
-        return root.get("data").get("id").asString();
+        return root.get("data").get("id").asText();
     }
 }
