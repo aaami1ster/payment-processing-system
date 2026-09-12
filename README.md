@@ -100,6 +100,25 @@ curl -s 'http://localhost:8080/api/v1/users?limit=50'
 
 **Validation:** Bean Validation on request DTOs (`@Valid`) for formats/ranges; handlers enforce business rules (duplicate email, missing user, non-HTTP callers). See `docs/low-level-design.md` — *Request validation (layered)*.
 
+## Fraud rules (Phase 2)
+
+In-process strategy objects under `domain/fraud` (no Drools). The service gathers data; `FraudEngine` runs **all** rules and aggregates:
+
+`DECLINE` → `DECLINED` · else `FLAG` → `FLAGGED` · else `APPROVED`
+
+| Rule | Condition | Outcome |
+| ---- | --------- | ------- |
+| `AMOUNT_WITHOUT_APPROVAL` | `amount > 10_000` and `amount > preApprovedTransactionLimit` (`null`/`0` = no approval) | `DECLINE` |
+| `VELOCITY` | ≥ 3 prior `APPROVED`/`FLAGGED` in inclusive `[now-60s, now]` | `DECLINE` |
+| `HIGH_RISK_CATEGORY` | category ∈ high-risk set (`GAMBLING`, `CRYPTO`, `CASH_ADVANCE`, `ADULT`) and `amount > 5_000` | `DECLINE` |
+| `NEW_USER_HIGH_AMOUNT` | `amount > 5_000` and user younger than 30 days | `FLAG` |
+
+`FLAGGED` is a **successful** authorization that needs review (HTTP `201` once transactions are wired). Business `DECLINED` is not an infrastructure failure — Postgres outages map to `503`, not a fabricated decline. High-risk categories and thresholds live in `fraud.*` (`FraudProperties`). Details: [docs/low-level-design.md](docs/low-level-design.md) (Fraud Detection Engine, Rule 2).
+
+```bash
+mvn -q -Dtest='*Fraud*,*Rule*,*VelocityWindow*' test
+```
+
 ## Local Maven build
 
 ```bash
@@ -107,6 +126,8 @@ mvn -q -DskipTests package
 ```
 
 Requires PostgreSQL + Mongo reachable at the URLs in `src/main/resources/application.yml` (or override via env).
+
+**Lombok:** optional compile-time dependency (`@Value`, `@Getter`/`@Setter`, `@RequiredArgsConstructor`). Enable annotation processing in the IDE. Prefer Java **records** for API DTOs; keep `LogFactory` (do not use `@Slf4j`).
 
 ## Security vulnerability scan
 

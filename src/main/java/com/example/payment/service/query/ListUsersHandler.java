@@ -8,11 +8,13 @@ import com.example.payment.domain.user.KycStatus;
 import com.example.payment.domain.user.User;
 import com.example.payment.service.mapper.UserMapper;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class ListUsersHandler {
 
     public static final int DEFAULT_LIMIT = 50;
@@ -22,11 +24,6 @@ public class ListUsersHandler {
 
     private final UserJpaRepository userRepository;
     private final UserMapper userMapper;
-
-    public ListUsersHandler(UserJpaRepository userRepository, UserMapper userMapper) {
-        this.userRepository = userRepository;
-        this.userMapper = userMapper;
-    }
 
     @Transactional(readOnly = true)
     public Result handle(String cursor, Integer limit, KycStatus kycStatus) {

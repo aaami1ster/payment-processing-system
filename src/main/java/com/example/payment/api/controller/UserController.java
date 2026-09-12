@@ -17,6 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/users")
+@RequiredArgsConstructor
 public class UserController {
 
     private final CreateUserHandler createUserHandler;
@@ -37,19 +39,6 @@ public class UserController {
     private final GetUserHandler getUserHandler;
     private final ListUsersHandler listUsersHandler;
     private final UserMapper userMapper;
-
-    public UserController(
-            CreateUserHandler createUserHandler,
-            UpdateUserHandler updateUserHandler,
-            GetUserHandler getUserHandler,
-            ListUsersHandler listUsersHandler,
-            UserMapper userMapper) {
-        this.createUserHandler = createUserHandler;
-        this.updateUserHandler = updateUserHandler;
-        this.getUserHandler = getUserHandler;
-        this.listUsersHandler = listUsersHandler;
-        this.userMapper = userMapper;
-    }
 
     @PostMapping
     public ResponseEntity<ApiResponse<UserResponse>> create(

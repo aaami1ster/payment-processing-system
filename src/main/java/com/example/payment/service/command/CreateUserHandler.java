@@ -10,12 +10,14 @@ import com.example.payment.service.mapper.UserMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class CreateUserHandler {
 
     private static final Logger log = LogFactory.getLogger(CreateUserHandler.class);
@@ -23,12 +25,6 @@ public class CreateUserHandler {
     private final UserJpaRepository userRepository;
     private final UserMapper userMapper;
     private final Clock clock;
-
-    public CreateUserHandler(UserJpaRepository userRepository, UserMapper userMapper, Clock clock) {
-        this.userRepository = userRepository;
-        this.userMapper = userMapper;
-        this.clock = clock;
-    }
 
     @Transactional
     public User handle(String email, KycStatus kycStatus) {
