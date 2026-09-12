@@ -26,15 +26,15 @@ Persistence unavailable → 503 — never fabricate a business decision
 6. **Every phase validation** must run the security vulnerability scan (see below) and fix High/Critical findings before marking the phase done.
 
 
-| Item             | Value                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| Base package     | `com.example.payment`                                                                             |
-| Main class       | `com.example.payment.PaymentProcessingApplication`                                                |
-| Stack            | Java 21+, Spring Boot **4.1.1** (prefer 3.x; see note), Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo |
-| Logging          | SLF4J + Logback via `LogFactory` only — never `System.out`                                        |
-| Manual API tests | Bruno collection in [`bruno/`](bruno/)                                                            |
-| Request validation | Bean Validation on API DTOs + business guards in CQRS handlers (see LLD) |
-| Security scan    | [`check-security-docker-scout.sh`](../scripts/check-security-docker-scout.sh) + [`check-security-owasp.sh`](../scripts/check-security-owasp.sh) |
+| Item               | Value                                                                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base package       | `com.example.payment`                                                                                                                           |
+| Main class         | `com.example.payment.PaymentProcessingApplication`                                                                                              |
+| Stack              | Java 21+, Spring Boot **4.1.1** (prefer 3.x; see note), Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo                  |
+| Logging            | SLF4J + Logback via `LogFactory` only — never `System.out`                                                                                      |
+| Manual API tests   | Bruno collection in `[bruno/](bruno/)`                                                                                                          |
+| Request validation | Bean Validation on API DTOs + business guards in CQRS handlers (see LLD)                                                                        |
+| Security scan      | `[check-security-docker-scout.sh](../scripts/check-security-docker-scout.sh)` + `[check-security-owasp.sh](../scripts/check-security-owasp.sh)` |
 
 
 **Progress legend:** `- [ ]` not done · `- [x]` done
@@ -53,7 +53,7 @@ Repo folder `[bruno/](bruno/)` is an **OpenCollection YAML** suite (Bruno ≥ 3)
 | Folder               | Phase gate | What it covers                                                      |
 | -------------------- | ---------- | ------------------------------------------------------------------- |
 | `bruno/health/`      | 0          | `/actuator/health`, liveness, readiness (+ prometheus when enabled) |
-| `bruno/user/`        | 1          | `POST/GET/PATCH /api/v1/users`, list, 404                       |
+| `bruno/user/`        | 1          | `POST/GET/PATCH /api/v1/users`, list, 404                           |
 | `bruno/transaction/` | 3–5 / 9    | Process, decline, get, idempotency, validation, list, audit-logs    |
 
 
@@ -69,9 +69,11 @@ npx @usebruno/cli run user --env Local
 npx @usebruno/cli run transaction --env Local
 ```
 
-Details: [`bruno/README.md`](bruno/README.md). Keep Bruno requests in sync when API contracts change (LLD wins).
+Details: `[bruno/README.md](bruno/README.md)`. Keep Bruno requests in sync when API contracts change (LLD wins).
 
 ---
+
+
 
 ## Security vulnerability scan (every phase validation)
 
@@ -84,11 +86,13 @@ Before marking **any** phase done, run both scanners (or the wrapper):
 ./scripts/check-security-vulnerabilities.sh
 ```
 
-| Script | Tool | Notes |
-| ------ | ---- | ----- |
-| `scripts/check-security-docker-scout.sh` | Docker Scout | App `pom`+`src` + app image (gate); vendor PG/Mongo warn-only unless `FAIL_ON_VENDOR=1` |
-| `scripts/check-security-owasp.sh` | OWASP Dependency-Check | Uses `NVD_API_KEY` from `.env`; report under `target/security/owasp/` |
-| `scripts/check-security-vulnerabilities.sh` | both | `SKIP_SCOUT=1` / `SKIP_OWASP=1` to run one |
+
+| Script                                      | Tool                   | Notes                                                                                   |
+| ------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
+| `scripts/check-security-docker-scout.sh`    | Docker Scout           | App `pom`+`src` + app image (gate); vendor PG/Mongo warn-only unless `FAIL_ON_VENDOR=1` |
+| `scripts/check-security-owasp.sh`           | OWASP Dependency-Check | Uses `NVD_API_KEY` from `.env`; report under `target/security/owasp/`                   |
+| `scripts/check-security-vulnerabilities.sh` | both                   | `SKIP_SCOUT=1` / `SKIP_OWASP=1` to run one                                              |
+
 
 ```bash
 SKIP_IMAGES=1 ./scripts/check-security-docker-scout.sh
@@ -98,7 +102,7 @@ IGNORE_BASE=0 ./scripts/check-security-docker-scout.sh       # include Temurin/A
 FAIL_CVSS=8 ./scripts/check-security-owasp.sh
 ```
 
-Put your NVD key in **`.env`** only (`NVD_API_KEY=…`) — never commit it. Template: `.env.example`.
+Put your NVD key in `.env` only (`NVD_API_KEY=…`) — never commit it. Template: `.env.example`.
 
 Complements (does not replace) Phase 11 SonarQube / static analysis.
 
@@ -201,7 +205,7 @@ cd bruno && npx @usebruno/cli run health --env Local
   **Description:** Keep `bruno/health/` docs/tests aligned with actuator paths (liveness/readiness semantics per LLD).  
   **Acceptance:** `bru run health --env Local` passes against a healthy compose stack.
 
-- [ ] **T0.7 — Security vulnerability scan script**  
+- [x] **T0.7 — Security vulnerability scan script**  
   **Description:** `check-security-docker-scout.sh` + `check-security-owasp.sh` (NVD key in `.env`); wired into every phase validation.  
   **Acceptance:** Both scripts documented; High/Critical CVEs fixed or gated.
 
@@ -1139,8 +1143,8 @@ Hard rules:
 
 ## Progress tracker (roll-up)
 
-- [ ] Phase 0 — Bootstrap & runtime
-- [ ] Phase 1 — Users API
+- [x] Phase 0 — Bootstrap & runtime
+- [x] Phase 1 — Users API
 - [ ] Phase 2 — Fraud domain
 - [ ] Phase 3 — Process transaction MVP
 - [ ] Phase 4 — Mongo audit publisher

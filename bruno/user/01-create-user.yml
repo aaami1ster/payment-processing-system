@@ -18,10 +18,8 @@ runtime:
   scripts:
     - type: before-request
       code: |-
-        const existing = bru.getEnvVar("sampleEmail");
-        if (!existing || existing.indexOf("+") === -1) {
-          bru.setEnvVar("sampleEmail", "alice.bruno+" + Date.now() + "@example.com");
-        }
+        // Always unique so repeated `bru run user` does not hit EMAIL_ALREADY_EXISTS
+        bru.setEnvVar("sampleEmail", "alice.bruno+" + Date.now() + "@example.com");
     - type: after-response
       code: |-
         if (res.status === 201 && res.body && res.body.data) {
