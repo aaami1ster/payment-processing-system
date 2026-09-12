@@ -273,6 +273,69 @@ class TransactionApiTest {
                 .andExpect(jsonPath("$.errors[0].code", equalTo("VALIDATION_ERROR")));
     }
 
+    @Test
+    void listTransactionsCursorPaginationAndEmptyPage() throws Exception {
+        String userId = createUser("list-txn+" + System.currentTimeMillis() + "@example.com");
+
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/api/v1/transactions")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "amount": %d.00,
+                                      "userId": "%s",
+                                      "merchantId": "mch_demo",
+                                      "category": "GROCERIES"
+                                    }
+                                    """.formatted(10 + i, userId)))
+                    .andExpect(status().isCreated());
+        }
+
+        MvcResult firstPage = mockMvc.perform(get("/api/v1/transactions")
+                        .param("userId", userId)
+                        .param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()", equalTo(2)))
+                .andExpect(jsonPath("$.data.hasMore", equalTo(true)))
+                .andExpect(jsonPath("$.data.nextCursor", notNullValue()))
+                .andExpect(jsonPath("$.errors", empty()))
+                .andExpect(jsonPath("$.message", equalTo("Transactions listed")))
+                .andReturn();
+
+        String nextCursor = objectMapper
+                .readTree(firstPage.getResponse().getContentAsString())
+                .get("data")
+                .get("nextCursor")
+                .asString();
+
+        mockMvc.perform(get("/api/v1/transactions")
+                        .param("userId", userId)
+                        .param("limit", "2")
+                        .param("cursor", nextCursor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()", equalTo(1)))
+                .andExpect(jsonPath("$.data.hasMore", equalTo(false)))
+                .andExpect(jsonPath("$.data.nextCursor", nullValue()));
+
+        mockMvc.perform(get("/api/v1/transactions")
+                        .param("userId", "00000000-0000-0000-0000-000000000000")
+                        .param("limit", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()", equalTo(0)))
+                .andExpect(jsonPath("$.data.hasMore", equalTo(false)))
+                .andExpect(jsonPath("$.data.nextCursor", nullValue()));
+
+        mockMvc.perform(get("/api/v1/transactions").param("limit", "10"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].code", equalTo("VALIDATION_ERROR")));
+
+        mockMvc.perform(get("/api/v1/transactions")
+                        .param("userId", userId)
+                        .param("limit", "500"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].code", equalTo("VALIDATION_ERROR")));
+    }
+
     private String createUser(String email) throws Exception {
         MvcResult create = mockMvc.perform(post("/api/v1/users")
                         .contentType(MediaType.APPLICATION_JSON)

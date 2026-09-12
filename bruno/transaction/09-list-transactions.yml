@@ -5,7 +5,7 @@ info:
 
 http:
   method: GET
-  url: "{{baseUrl}}/api/v1/transactions"
+  url: "{{baseUrl}}/api/v1/transactions?userId={{userId}}&limit=50"
   params:
     - name: userId
       value: "{{userId}}"
@@ -14,11 +14,11 @@ http:
       value: "50"
       type: query
     - name: from
-      value: "2020-01-01T00:00:00Z"
+      value: 2020-01-01T00:00:00Z
       type: query
       disabled: true
     - name: to
-      value: "2099-01-01T00:00:00Z"
+      value: 2099-01-01T00:00:00Z
       type: query
       disabled: true
     - name: status
@@ -58,6 +58,7 @@ settings:
   timeout: 0
   followRedirects: true
   maxRedirects: 5
+  forwardAuthorizationHeader: true
 
 docs: |-
   # GET /api/v1/transactions

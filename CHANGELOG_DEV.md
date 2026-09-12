@@ -6,6 +6,19 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 9 cursor-paginated transaction list`
+
+#### Added
+
+- List transactions via `GET /api/v1/transactions` with required `userId` and cursor pagination
+- Filter by optional `from`/`to`/`status` and enforce limit default 50 / max 200
+- Cover handler and API pagination (including empty pages) with unit and Testcontainers tests
+- Document bulk export in README/Swagger and harden Bruno `09-list-transactions` for Phase 9
+
+#### Changed
+
+- Mark Phase 9 plan tasks T9.1–T9.2 done
+
 ### MR: `feat: add phase 8 optional redis user query cache`
 
 #### Added
