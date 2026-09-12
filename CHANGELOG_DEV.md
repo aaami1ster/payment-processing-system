@@ -6,6 +6,21 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 10 signed async webhooks`
+
+#### Added
+
+- Enqueue optional WEBHOOK outbox rows beside AUDIT on payment commit for YAML subscribers
+- Deliver HMAC-signed HTTP POSTs asynchronously via `WebhookClient` (`X-Signature: sha256=…`)
+- Retry webhook delivery with the same outbox backoff when subscribers return 5xx or are unreachable
+- Cover signed delivery, 5xx retry, and subscriber-down paths with `WebhookOutboxIT`
+- Document webhook subscription config and at-least-once semantics in the README
+
+#### Changed
+
+- Extend `audit_outbox` with `destination` / delivery columns so AUDIT and WEBHOOK share the publisher
+- Mark Phase 10 plan tasks T10.1–T10.2 done
+
 ### MR: `feat: add phase 9 cursor-paginated transaction list`
 
 #### Added

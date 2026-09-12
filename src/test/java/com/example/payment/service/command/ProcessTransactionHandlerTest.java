@@ -14,6 +14,7 @@ import com.example.payment.common.exception.ServiceUnavailableException;
 import com.example.payment.common.exception.UserNotFoundException;
 import com.example.payment.common.util.RequestFingerprint;
 import com.example.payment.config.FraudProperties;
+import com.example.payment.config.WebhookProperties;
 import com.example.payment.data.postgres.entity.AuditOutboxEntity;
 import com.example.payment.data.postgres.entity.TransactionEntity;
 import com.example.payment.data.postgres.entity.UserEntity;
@@ -93,7 +94,8 @@ class ProcessTransactionHandlerTest {
                 new TransactionMapper(),
                 JsonMapper.builder().build(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                paymentMetrics);
+                paymentMetrics,
+                new WebhookProperties());
     }
 
     @Test
