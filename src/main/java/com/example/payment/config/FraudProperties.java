@@ -16,8 +16,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "fraud")
 public class FraudProperties {
 
-    private Set<Category> highRiskCategories =
-            EnumSet.of(Category.GAMBLING, Category.CRYPTO, Category.CASH_ADVANCE, Category.ADULT);
+    private Set<Category> highRiskCategories = EnumSet.of(Category.CRYPTO, Category.CASH_ADVANCE);
 
     private BigDecimal amountWithoutApprovalThreshold = new BigDecimal("10000");
 

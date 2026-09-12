@@ -24,7 +24,7 @@ class FraudEngineTest {
             new AmountWithoutApprovalRule(new BigDecimal("10000")),
             new VelocityRule(3),
             new HighRiskCategoryRule(
-                    EnumSet.of(Category.GAMBLING, Category.CRYPTO, Category.CASH_ADVANCE, Category.ADULT),
+                    EnumSet.of(Category.CRYPTO, Category.CASH_ADVANCE),
                     new BigDecimal("5000")),
             new NewUserHighAmountRule(new BigDecimal("5000"), Duration.ofDays(30))));
 
