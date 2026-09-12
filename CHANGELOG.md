@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-13
+
+MR title: `chore(release): 1.2.0`
+
+### Added
+
+- Add an interactive shell demo that walks challenge and optional features one by one with confirm/skip, pass/fail tracking, and a pinned progress menu
+
+### Changed
+
+- Document the updated high-risk category list in LLD and requirements
+
 ## [1.1.0] - 2026-09-12
 
 MR title: `chore(release): 1.1.0`
@@ -108,5 +120,6 @@ MR title: `chore(release): 1.0.0`
 - Suppress known OWASP CPE false positives and drop unfixed GNU wget from the app image
 
 [unreleased]: https://github.com/aaami1ster/payment-processing-system/compare/main...HEAD
+[1.2.0]: https://github.com/aaami1ster/payment-processing-system/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/aaami1ster/payment-processing-system/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/aaami1ster/payment-processing-system/releases/tag/v1.0.0
