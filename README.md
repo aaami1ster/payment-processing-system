@@ -14,7 +14,7 @@ CQRS-lite on a single PostgreSQL system of record:
 | ----- | ---- |
 | API | Controllers, `ApiResponse` envelope, Bean Validation, OpenAPI |
 | Commands | Writes: `FOR UPDATE`, idempotency, fraud, persist + outbox |
-| Queries | Read-only views (`GetUser`, `GetTransaction`, list users) |
+| Queries | Read-only views (`GetUser`, `GetTransaction`, list users/transactions) |
 | Domain | `User`, `Transaction`, `FraudEngine` + four `FraudRule`s |
 | Data | JPA/Liquibase (Postgres), Mongo audit docs, `OutboxPublisher` |
 
@@ -95,6 +95,7 @@ All responses use the `ApiResponse` envelope (`data`, `message`, `errors[]`, `me
 | Method | Path | Success | Notes |
 | ------ | ---- | ------- | ----- |
 | `POST` | `/api/v1/transactions` | `201` | Body: `amount`, `userId`, `merchantId`, `category` — status in `data` even when `DECLINED` |
+| `GET` | `/api/v1/transactions` | `200` | Cursor page (`userId` required; `limit`, `cursor`, optional `from`/`to`/`status`) |
 | `GET` | `/api/v1/transactions/{id}` | `200` | `404` `NOT_FOUND` |
 
 | Outcome | HTTP | Code |
@@ -183,6 +184,7 @@ Highlights from the [HLD](docs/high-level-design.md):
 | Idempotency | Optional key + SHA-256 fingerprint + partial unique index | Safe retries; `409` on fingerprint conflict |
 | Rate limiting | In-process Bucket4j filter on `/api/v1/**` (user / merchant / IP) | Caps abuse before handlers; does **not** replace Rule 2 |
 | Redis user cache | Optional `user:{id}` read-through on `GetUserHandler` only | Faster GETs; invalidate on PATCH; **never** on authorize `FOR UPDATE` |
+| Bulk export | Cursor-paginated `GET /transactions?userId=` | Stable `created_at DESC, id DESC` pages; max limit 200; query-only |
 | Validation | Bean Validation on DTOs **and** handler guards | Contract at the edge; invariants for non-HTTP callers |
 | Logging | SLF4J via `LogFactory` + Logback JSON + MDC | Never `System.out`; correlate via `requestId` |
 
@@ -202,6 +204,16 @@ docker compose --profile redis up --build -d
 ```
 
 Config: `payment.cache.user.enabled` (default `false`), `ttl-seconds`, `spring.data.redis.*`. Redis down or disabled → GET users fall through to Postgres; readiness does not require Redis.
+
+**Optional bulk export (Phase 9):**
+
+```bash
+# After creating a user and a few payments:
+curl -s "http://localhost:8080/api/v1/transactions?userId=$USER_ID&limit=2"
+# Follow data.nextCursor until hasMore is false
+```
+
+`ListTransactionsHandler` is read-only (no locks/outbox). Filters: required `userId`; optional `from`/`to` (inclusive ISO-8601), `status`, `cursor`; `limit` default 50, max 200.
 
 **Rate limit demo (burst → 429):**
 

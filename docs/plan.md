@@ -987,11 +987,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T9.1 — List endpoint + cursor query**  
+- [x] **T9.1 — List endpoint + cursor query**  
   **Description:** Filters userId/from/to/status/limit per LLD.  
   **Acceptance:** Deterministic order `created_at DESC, id DESC`; max limit enforced.
 
-- [ ] **T9.2 — Tests + OpenAPI/README/Bruno**  
+- [x] **T9.2 — Tests + OpenAPI/README/Bruno**  
   **Description:** Pagination + empty page cases; keep Bruno list request docs/tests accurate.  
   **Acceptance:** Documented in Swagger, README, and `bruno/transaction/` list request.
 
@@ -1152,7 +1152,7 @@ Hard rules:
 - [x] Phase 6 — Hardening & submission README
 - [x] Phase 7 — Rate limiting (optional)
 - [x] Phase 8 — Redis cache (optional)
-- [ ] Phase 9 — Bulk export (optional)
+- [x] Phase 9 — Bulk export (optional)
 - [ ] Phase 10 — Webhooks (optional)
 - [ ] Phase 11 — Static analysis (optional)
 

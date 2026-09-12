@@ -5,14 +5,8 @@ info:
 
 http:
   method: GET
-  url: "{{baseUrl}}/api/v1/transactions"
+  url: "{{baseUrl}}/api/v1/transactions?userId={{userId}}&limit=50"
   params:
-    - name: userId
-      value: "{{userId}}"
-      type: query
-    - name: limit
-      value: "50"
-      type: query
     - name: from
       value: "2020-01-01T00:00:00Z"
       type: query
@@ -26,31 +20,44 @@ http:
       type: query
       disabled: true
     - name: cursor
-      value: ""
+      value: "{{transactionsNextCursor}}"
       type: query
       disabled: true
 
 runtime:
   scripts:
+    - type: before-request
+      code: |-
+        const userId = bru.getEnvVar("userId");
+        if (!userId || String(userId).trim() === "") {
+          throw new Error("userId is empty — run user/01-create-user first");
+        }
+    - type: after-response
+      code: |-
+        if (res.status === 200 && res.body && res.body.data && res.body.data.nextCursor) {
+          bru.setEnvVar("transactionsNextCursor", res.body.data.nextCursor);
+        }
     - type: tests
       code: |-
-        test("HTTP 200 when list is implemented (Phase 9+)", function() {
-          // Until Phase 9: no GET mapping on collection path → 404 or 405
-          if (res.status === 404 || res.status === 405) {
-            expect([404, 405]).to.include(res.status);
-            return;
-          }
+        test("HTTP 200", function() {
           expect(res.status).to.equal(200);
         });
 
-        test("page shape when available", function() {
-          if (res.status === 404 || res.status === 405) {
-            expect(true).to.equal(true);
-            return;
-          }
+        test("page shape: items, nextCursor, hasMore", function() {
           expect(res.body.data).to.have.property("items").that.is.an("array");
           expect(res.body.data).to.have.property("hasMore");
+          expect(res.body.data).to.have.property("nextCursor");
           expect(res.body.errors).to.be.an("array").that.is.empty;
+          expect(res.body.meta.requestId).to.be.a("string").that.is.not.empty;
+          expect(res.body.message).to.equal("Transactions listed");
+        });
+
+        test("created user transactions appear when userId is set", function() {
+          const userId = bru.getEnvVar("userId");
+          if (!userId) {
+            return;
+          }
+          expect(res.body.data.items).to.be.an("array");
         });
 
 settings:
@@ -62,7 +69,7 @@ settings:
 docs: |-
   # GET /api/v1/transactions
 
-  Cursor-paginated list/export for one user.
+  Cursor-paginated list/export for one user (newest first).
 
   ## When available
   Phase 9 (optional enhancement)
@@ -70,12 +77,21 @@ docs: |-
   ## Query params
   | Param | Required | Notes |
   | ----- | -------- | ----- |
-  | `userId` | yes | Scope |
-  | `from` / `to` | no | Inclusive `created_at` bounds |
+  | `userId` | yes | Scope to one user |
+  | `from` / `to` | no | Inclusive `created_at` bounds (ISO-8601) |
   | `status` | no | `APPROVED` \| `FLAGGED` \| `DECLINED` |
-  | `cursor` | no | Opaque cursor |
+  | `cursor` | no | Opaque; from previous `nextCursor` (`{{transactionsNextCursor}}`) |
   | `limit` | no | Default 50, max 200 |
 
   ## Success
   - **HTTP** `200`
   - `data.items`, `data.nextCursor`, `data.hasMore`
+  - Empty page → `items: []`, `hasMore: false`, `nextCursor: null`
+
+  ## Errors
+  | HTTP | `errors[].code` |
+  | ---- | --------------- |
+  | `400` | `VALIDATION_ERROR` (missing `userId`, bad `limit` / `cursor` / `status` / `from`/`to`) |
+
+  ## Prerequisite
+  Run **Create user** and at least one **Process transaction** so the page can be non-empty.
