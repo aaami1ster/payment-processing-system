@@ -79,6 +79,12 @@ will_do() {
   echo "  $1"
 }
 
+expect_result() {
+  echo
+  echo "${C_BOLD}Expected result${C_RESET}"
+  echo "  $1"
+}
+
 prep_box() {
   echo
   echo "${C_YELLOW}${C_BOLD}Preparation required${C_RESET}"
@@ -118,10 +124,15 @@ fail() {
 
 info() { echo "  ${C_DIM}$*${C_RESET}"; }
 
-pause_continue() {
+# After title / description / expected (and optional prep), wait for audience.
+# Returns 0 to run the step, 1 if aborted (caller should return 0).
+confirm_or_abort() {
   echo
   read -r -p "${C_DIM}Press Enter to continue (or type skip to abort this step)… ${C_RESET}" ans || true
-  [[ "${ans}" == "skip" ]] && return 1
+  if [[ "${ans}" == "skip" ]]; then
+    info "Skipped."
+    return 1
+  fi
   return 0
 }
 
@@ -364,6 +375,8 @@ resolve_feature() {
 run_health() {
   section_title "Health & readiness"
   will_do "Call readiness (requires Postgres) and show aggregated health. Mongo/Redis are not required for readiness — resilience design."
+  expect_result "Readiness status=UP; aggregated health is returned without requiring Mongo or Redis."
+  confirm_or_abort || return 0
 
   show_request <<EOF
 GET ${BASE_URL}/actuator/health/readiness
@@ -395,6 +408,8 @@ EOF
 run_users() {
   section_title "User management"
   will_do "Create a user, GET by id, list with cursor, then PATCH KYC + pre-approved limit. Maps to challenge: User Management."
+  expect_result "Create 201 → get/list 200 → update 200 with kycStatus=VERIFIED and preApprovedTransactionLimit=15000."
+  confirm_or_abort || return 0
 
   show_request <<EOF
 POST /api/v1/users  {"email":"…","kycStatus":"PENDING"}
@@ -444,7 +459,9 @@ EOF
 
 run_approved() {
   section_title "Process transaction → APPROVED"
-  will_do "Authorize a small groceries payment. Expect HTTP 201 with status APPROVED and empty rulesTriggered."
+  will_do "Authorize a small groceries payment for the session user."
+  expect_result "HTTP 201 with status=APPROVED and empty rulesTriggered."
+  confirm_or_abort || return 0
 
   ensure_user
   show_request <<EOF
@@ -469,18 +486,17 @@ EOF
 
 run_rule1() {
   section_title "Fraud Rule 1 — AMOUNT_WITHOUT_APPROVAL"
-  will_do "Amount > 10,000 with no (or insufficient) pre-approved limit → DECLINED. Challenge Rule 1."
+  will_do "Post amount > 10,000 for a user with no pre-approved limit. Challenge Rule 1."
+  expect_result "HTTP 201 with status=DECLINED and rulesTriggered including AMOUNT_WITHOUT_APPROVAL."
+  confirm_or_abort || return 0
 
-  ensure_user
-  # Ensure limit is null/low for a clean demo
-  http PATCH "${BASE_URL}/api/v1/users/${DEMO_USER_ID}" \
-    -H 'Content-Type: application/json' \
-    -d '{"preApprovedTransactionLimit":0}' || true
+  # Fresh user: preApprovedTransactionLimit is null (API rejects PATCH 0 / clearing to zero).
+  create_fresh_user "rule1"
+  info "userId=${DEMO_USER_ID}  preApprovedTransactionLimit=null"
 
   show_request <<EOF
 POST /api/v1/transactions
 Body: {"amount":12000.00,"userId":"${DEMO_USER_ID}","merchantId":"mch_demo","category":"GROCERIES"}
-Expect: status=DECLINED, rulesTriggered includes AMOUNT_WITHOUT_APPROVAL
 EOF
 
   local body status rules
@@ -501,7 +517,9 @@ EOF
 
 run_rule2() {
   section_title "Fraud Rule 2 — VELOCITY (concurrency)"
-  will_do "Seed 2 APPROVED payments, then fire 2 concurrent POSTs for the same user. FOR UPDATE serializes them: exactly one becomes #3 (APPROVED), exactly one is DECLINED with VELOCITY as #4."
+  will_do "Seed 2 APPROVED payments, then fire 2 concurrent POSTs for the same user. FOR UPDATE serializes them so the race cannot double-approve."
+  expect_result "Exactly 1 concurrent APPROVED (#3) + 1 DECLINED with VELOCITY (#4); DB authorized count = 3."
+  confirm_or_abort || return 0
 
   info "Using a fresh user so prior demo traffic does not skew the window."
   create_fresh_user "velocity"
@@ -510,7 +528,6 @@ run_rule2() {
   show_request <<EOF
 POST ×2 sequential  amount=25.00  (seed — expect APPROVED)
 POST ×2 concurrent  amount=30.00  (same userId — race under FOR UPDATE)
-Expect: 1× APPROVED + 1× DECLINED(VELOCITY); final authorized count = 3
 EOF
 
   local i body status
@@ -616,12 +633,13 @@ EOF
 run_rule3() {
   section_title "Fraud Rule 3 — HIGH_RISK_CATEGORY"
   will_do "High-risk category (CRYPTO/CASH_ADVANCE) AND amount > 5,000 → DECLINED. Challenge Rule 3."
+  expect_result "HTTP 201 with status=DECLINED and rulesTriggered including HIGH_RISK_CATEGORY."
+  confirm_or_abort || return 0
 
   ensure_user
   show_request <<EOF
 POST /api/v1/transactions
 Body: {"amount":5500.00,"userId":"${DEMO_USER_ID}","merchantId":"mch_demo","category":"CRYPTO"}
-Expect: status=DECLINED, rulesTriggered includes HIGH_RISK_CATEGORY
 EOF
 
   local body status rules
@@ -643,6 +661,8 @@ EOF
 run_rule4() {
   section_title "Fraud Rule 4 — NEW_USER_HIGH_AMOUNT (FLAG)"
   will_do "Raise pre-approved limit so Rule 1 does not decline, then amount > 5,000 on a user younger than 30 days → FLAGGED (allowed). Challenge Rule 4."
+  expect_result "HTTP 201 with status=FLAGGED and rulesTriggered including NEW_USER_HIGH_AMOUNT."
+  confirm_or_abort || return 0
 
   create_fresh_user "flag"
   info "Fresh user ${DEMO_USER_ID} — created just now (< 30 days)."
@@ -653,7 +673,6 @@ run_rule4() {
 PATCH /api/v1/users/${DEMO_USER_ID}  {"preApprovedTransactionLimit":15000}
 POST  /api/v1/transactions
 Body: {"amount":12000.00,"userId":"${DEMO_USER_ID}","merchantId":"mch_demo","category":"GROCERIES"}
-Expect: status=FLAGGED, rulesTriggered includes NEW_USER_HIGH_AMOUNT
 EOF
 
   local body status rules
@@ -675,6 +694,8 @@ EOF
 run_idem_replay() {
   section_title "Idempotency — safe replay"
   will_do "Same Idempotency-Key + same body returns the same transactionId (no duplicate charge). Optional enhancement."
+  expect_result "Both calls HTTP 201 with the identical transactionId."
+  confirm_or_abort || return 0
 
   ensure_user
   LAST_IDEMPOTENCY_KEY="demo-idem-$(date +%s)"
@@ -712,6 +733,8 @@ EOF
 run_idem_conflict() {
   section_title "Idempotency — conflict → 409"
   will_do "Same Idempotency-Key with a different body fingerprint → HTTP 409 IDEMPOTENCY_CONFLICT."
+  expect_result "First call 201; second call HTTP 409 with errors[0].code=IDEMPOTENCY_CONFLICT."
+  confirm_or_abort || return 0
 
   ensure_user
   local key="demo-conflict-$(date +%s)"
@@ -746,6 +769,8 @@ EOF
 run_get_txn() {
   section_title "Get transaction by ID"
   will_do "Fetch a known transaction; then show 404 for a random UUID."
+  expect_result "Known id → HTTP 200; unknown UUID → HTTP 404 NOT_FOUND."
+  confirm_or_abort || return 0
 
   ensure_user
   if [[ -z "${LAST_TXN_ID}" ]]; then
@@ -787,6 +812,8 @@ EOF
 run_list_txn() {
   section_title "List / bulk export (cursor pagination)"
   will_do "Create several transactions for a fresh user, then page with limit=2 following nextCursor until hasMore=false. Optional bulk-export enhancement."
+  expect_result "5 transactions drained across 3 pages (limit=2); hasMore becomes false; no duplicate ids."
+  confirm_or_abort || return 0
 
   create_fresh_user "list"
   info "userId=${DEMO_USER_ID}"
@@ -840,6 +867,8 @@ EOF
 run_audit() {
   section_title "Audit logging (outbox → MongoDB)"
   will_do "Authorize a payment, wait for audit_outbox PUBLISHED, then show the Mongo audit_logs document. Challenge: durable audit that survives restarts."
+  expect_result "Payment 201; outbox destination=AUDIT becomes PUBLISHED; Mongo audit_logs has a doc for that transactionId."
+  confirm_or_abort || return 0
 
   ensure_user
   local body txn_id
@@ -894,19 +923,18 @@ EOF
 run_rate_limit() {
   section_title "Rate limiting → HTTP 429"
   will_do "Burst POST /transactions for one user until RATE_LIMIT_EXCEEDED. Rejected calls must not write txn/outbox rows. Default user capacity ≈ 60/min."
-
+  expect_result "HTTP 429 with RATE_LIMIT_EXCEEDED; DB transaction count equals only the successful 201 responses."
   prep_box <<'EOF'
 This step sends many requests (~60+) and may take ~30–60s.
 If you never hit 429, rebuild: docker compose up --build -d
 EOF
-  pause_continue || { info "Skipped."; return 0; }
+  confirm_or_abort || return 0
 
   create_fresh_user "ratelimit"
   info "userId=${DEMO_USER_ID}"
 
   show_request <<EOF
 POST /api/v1/transactions  (loop until HTTP 429)
-Expect: errors[0].code=RATE_LIMIT_EXCEEDED, optional Retry-After
 EOF
 
   local max=90 i tmp code body_429="" retry_after="" hit=0 ok=0
@@ -963,6 +991,8 @@ EOF
 run_metrics() {
   section_title "Observability — Prometheus metrics"
   will_do "Scrape /actuator/prometheus for payment and outbox series (challenge: observability)."
+  expect_result "Scrape includes payment_transactions_total and/or outbox_pending series."
+  confirm_or_abort || return 0
 
   show_request <<EOF
 GET ${BASE_URL}/actuator/prometheus
@@ -987,6 +1017,8 @@ EOF
 run_errors() {
   section_title "Error paths"
   will_do "Show clean API errors: validation 400, unknown user 404, unknown path 404."
+  expect_result "400 VALIDATION_ERROR; 404 USER_NOT_FOUND; 404 for unknown path — all with ApiResponse error envelope."
+  confirm_or_abort || return 0
 
   show_request <<EOF
 POST /api/v1/transactions  {"amount":-1,...}           → 400 VALIDATION_ERROR
@@ -995,7 +1027,9 @@ GET  /api/v1/does-not-exist                            → 404
 EOF
 
   local bad unknown path code1 code2 code3
-  ensure_user
+  # Fresh user so a prior rate-limit burst on the session user does not turn this into 429.
+  create_fresh_user "errors"
+  info "userId=${DEMO_USER_ID}"
 
   http POST "${BASE_URL}/api/v1/transactions" \
     -H 'Content-Type: application/json' \
@@ -1038,7 +1072,7 @@ EOF
 run_redis() {
   section_title "Redis user cache (optional)"
   will_do "GET /users/{id} uses optional read-through cache; PATCH invalidates. Authorize path never uses Redis."
-
+  expect_result "Repeated GETs succeed; PATCH updates KYC; cache hit/miss visible in app logs (user.cache)."
   prep_box <<'EOF'
 Required before this step:
   1. PAYMENT_CACHE_USER_ENABLED=true in .env
@@ -1046,7 +1080,7 @@ Required before this step:
   3. Confirm: docker compose ps redis  (running)
 If Redis is off, this step will detect it and stop cleanly.
 EOF
-  pause_continue || { info "Skipped."; return 0; }
+  confirm_or_abort || return 0
 
   # Detect Redis / cache enabled
   if ! docker compose ps --status running redis 2>/dev/null | grep -q redis; then
@@ -1054,7 +1088,11 @@ EOF
     return 1
   fi
 
-  ensure_user
+  # Fresh user — avoid reusing a session user whose rate-limit bucket was emptied
+  # by step 13 (GET /users/{id} is keyed by path userId in RateLimitFilter).
+  create_fresh_user "redis"
+  info "userId=${DEMO_USER_ID}"
+
   show_request <<EOF
 GET  /api/v1/users/${DEMO_USER_ID}   (may populate cache)
 GET  /api/v1/users/${DEMO_USER_ID}   (expect cache hit in app logs: user.cache.hit)
@@ -1068,12 +1106,14 @@ EOF
   echo
   echo "${C_BOLD}GET #1 — HTTP ${HTTP_CODE}${C_RESET}"
   show_response "${g1}"
+  [[ "${HTTP_CODE}" == "200" ]] || { fail "GET #1 expected 200, got ${HTTP_CODE}"; return 1; }
 
   http GET "${BASE_URL}/api/v1/users/${DEMO_USER_ID}"
   g2="$HTTP_BODY"
   echo
   echo "${C_BOLD}GET #2 (should be cached) — HTTP ${HTTP_CODE}${C_RESET}"
   show_response "${g2}"
+  [[ "${HTTP_CODE}" == "200" ]] || { fail "GET #2 expected 200, got ${HTTP_CODE}"; return 1; }
 
   http PATCH "${BASE_URL}/api/v1/users/${DEMO_USER_ID}" \
     -H 'Content-Type: application/json' \
@@ -1082,6 +1122,7 @@ EOF
   echo
   echo "${C_BOLD}PATCH (invalidate) — HTTP ${HTTP_CODE}${C_RESET}"
   show_response "${patched}"
+  [[ "${HTTP_CODE}" == "200" ]] || { fail "PATCH expected 200, got ${HTTP_CODE}"; return 1; }
 
   http GET "${BASE_URL}/api/v1/users/${DEMO_USER_ID}"
   g3="$HTTP_BODY"
@@ -1096,14 +1137,14 @@ EOF
   if [[ "${HTTP_CODE}" == "200" && "${kyc}" == "VERIFIED" ]]; then
     pass "User GETs succeed with Redis up; PATCH applied (cache invalidated). Authorize still uses Postgres FOR UPDATE only."
   else
-    fail "Unexpected GET/PATCH result after Redis demo"
+    fail "GET #3 expected 200 with kycStatus=VERIFIED, got HTTP ${HTTP_CODE} kyc=${kyc}"
   fi
 }
 
 run_webhooks() {
   section_title "Signed webhooks (optional)"
   will_do "When enabled, each payment also enqueues a WEBHOOK outbox row; publisher POSTs HMAC-signed JSON asynchronously. Authorize never waits on the subscriber."
-
+  expect_result "Fast HTTP 201; WEBHOOK outbox row PUBLISHED (listener up) or PENDING (listener down) — payment still succeeds."
   prep_box <<'EOF'
 Required before this step:
   1. Host listener on :9999 (see "prep" command for Python snippet)
@@ -1111,7 +1152,7 @@ Required before this step:
   3. docker compose up --build -d
   4. Watch the Python terminal for X-Signature + body
 EOF
-  pause_continue || { info "Skipped."; return 0; }
+  confirm_or_abort || return 0
 
   local enabled
   enabled=$(docker compose exec -T app printenv PAYMENT_WEBHOOKS_ENABLED </dev/null 2>/dev/null || echo "false")
@@ -1121,11 +1162,12 @@ EOF
     info "Env PAYMENT_WEBHOOKS_ENABLED=${enabled:-unset} — will verify via outbox rows after payment."
   fi
 
-  ensure_user
+  create_fresh_user "webhook"
+  info "userId=${DEMO_USER_ID}"
+
   show_request <<EOF
 POST /api/v1/transactions  (expect fast 201)
 Then: SELECT destination, status, attempts FROM audit_outbox ORDER BY id DESC LIMIT 5
-Expect AUDIT + WEBHOOK rows → PUBLISHED when listener is up
 EOF
 
   local body txn_id
