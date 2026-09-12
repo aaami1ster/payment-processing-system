@@ -39,7 +39,7 @@ Persistence unavailable → 503 — never fabricate a business decision
 
 **Progress legend:** `- [ ]` not done · `- [x]` done
 
-**Spring Boot version:** Challenge asks for 3.x. **This branch** uses **3.5.16** (Framework 6.2.19) and clears High/Critical Spring Framework CVEs that need **6.2.20+** (not on Maven Central) via **virtual patching**: the app does not use `XsltView` or WebMvc.fn SSE (`@RestController` only), documented in `owasp-suppressions.xml` for CVE-2026-47884 / CVE-2026-59313. **Preferred production/demo path** remains Boot **4.1.x** on `develop`/`main` (Framework 7.x) for a cleaner SCA report without those suppressions — no commercial Spring license.
+**Spring Boot version:** Challenge asks for 3.x. **This branch** uses **3.5.16** (Framework 6.2.19) and clears High/Critical Spring Framework CVEs that need **6.2.20+** (not on Maven Central) via **virtual patching**: MVC `@RestController` JSON only — no WebFlux / RSocket / WebMvc.fn / SSE / `XsltView` / user SpEL — documented in `owasp-suppressions.xml`. Other High/Critical transitive deps are version-pinned in `pom.xml`. **Preferred production/demo path** remains Boot **4.1.x** on `develop`/`main` (Framework 7.x) for a cleaner SCA report without those suppressions — no commercial Spring license.
 
 ---
 

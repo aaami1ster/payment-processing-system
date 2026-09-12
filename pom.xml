@@ -23,14 +23,19 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- Keep Tomcat on a recent 10.1.x for Boot 3 / Servlet 6 -->
-        <tomcat.version>10.1.44</tomcat.version>
+        <!-- Boot 3 / Servlet 6: pin recent patched lines (NVD High/Critical) -->
+        <tomcat.version>10.1.59</tomcat.version>
+        <netty.version>4.1.138.Final</netty.version>
+        <jackson-bom.version>2.21.6</jackson-bom.version>
+        <postgresql.version>42.7.13</postgresql.version>
+        <log4j2.version>2.26.1</log4j2.version>
         <dependency-check.failBuildOnCVSS>7</dependency-check.failBuildOnCVSS>
         <dependency-check.version>13.0.0</dependency-check.version>
         <jacoco.version>0.8.14</jacoco.version>
         <jacoco.minimum.coverage>0.75</jacoco.minimum.coverage>
         <jacoco.minimum.branch.coverage>0.80</jacoco.minimum.branch.coverage>
-        <springdoc.version>2.8.8</springdoc.version>
+        <!-- 2.8.17 pulls swagger-ui 5.32.x (DOMPurify fix) -->
+        <springdoc.version>2.8.17</springdoc.version>
         <!-- Phase 11: static analysis (CI-only Sonar; local SpotBugs/PMD/Checkstyle on verify) -->
         <sonar.version>5.7.0.6970</sonar.version>
         <spotbugs.version>4.10.3.0</spotbugs.version>
@@ -82,15 +87,22 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- 8.1 stays on Jackson 2.x (Boot 3). logstash 9.0 pulls tools.jackson 3.0.1. -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
-            <version>9.0</version>
+            <version>8.1</version>
         </dependency>
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>${springdoc.version}</version>
+        </dependency>
+        <!-- springdoc 2.8.17 still manages swagger-ui 5.32.2 (DOMPurify 3.3.2 / CVE-2026-65898) -->
+        <dependency>
+            <groupId>org.webjars</groupId>
+            <artifactId>swagger-ui</artifactId>
+            <version>5.32.14</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

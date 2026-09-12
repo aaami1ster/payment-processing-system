@@ -32,7 +32,7 @@ Design docs: [`docs/`](docs/) · plan: [`docs/plan.md`](docs/plan.md) · HLD: [`
 
 **Stack (this branch):** Java 21+, Spring Boot **3.5.16**, Maven, PostgreSQL 18, MongoDB 8, Liquibase, Testcontainers, JUnit 5, JaCoCo.
 
-**Security posture:** Framework High/Critical CVEs that need **6.2.20+** are not fixable via Maven Central on Boot 3.x (commercial-only). This branch **virtually patches** CVE-2026-47884 / CVE-2026-59313 by non-use (`@RestController` only — no `XsltView`, no WebMvc.fn SSE) plus documented OWASP suppressions in `owasp-suppressions.xml`. Prefer Boot **4.1.x** on `develop`/`main` when an OSS Framework upgrade is acceptable (cleaner SCA report).
+**Security posture:** Framework High/Critical CVEs that need **6.2.20+** are not fixable via Maven Central on Boot 3.x (commercial-only / EOL public line). This branch **virtually patches** those Spring Framework findings by non-use (MVC `@RestController` JSON only — no WebFlux, RSocket, WebMvc.fn, SSE, `XsltView`, or user SpEL) plus documented OWASP suppressions in `owasp-suppressions.xml`. Other High/Critical deps are upgraded in `pom.xml` (Tomcat 10.1.59, Netty 4.1.138, Jackson 2.21.6, PostgreSQL 42.7.13, swagger-ui 5.32.14, …). Prefer Boot **4.1.x** on `develop`/`main` when an OSS Framework upgrade is acceptable (cleaner SCA — library fixes instead of suppressions).
 
 ## Setup & Prerequisites
 
