@@ -171,6 +171,28 @@ mvn verify
 open target/site/jacoco/index.html
 ```
 
+## Code quality (static analysis)
+
+CI-oriented quality gate alongside JaCoCo. **No Sonar container in app `docker-compose`** and no runtime dependency.
+
+| Path | Command | When |
+| ---- | ------- | ---- |
+| Local / CI gate | `mvn verify` | Tests + JaCoCo (≥ 75% line, ≥ 80% branch) + SpotBugs (High) + PMD + Checkstyle |
+| SonarQube (optional) | `mvn verify sonar:sonar` | Needs a Sonar server + `SONAR_HOST_URL` / token (CI secrets) |
+
+```bash
+# Always-on local gate (no Sonar server required):
+mvn verify
+# Reports: target/site/jacoco/, target/spotbugsXml.xml, target/pmd.xml, target/checkstyle-result.xml
+
+# Optional Sonar upload (after verify so JaCoCo XML exists):
+export SONAR_HOST_URL=https://sonar.example.com
+export SONAR_TOKEN=***   # never commit
+mvn -B sonar:sonar -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN"
+```
+
+**Quality expectations:** JaCoCo line ≥ 75% (enforced); SpotBugs fails on High findings; PMD/Checkstyle use lean configs under `config/`. Sample GitHub Actions workflow: [`.github/workflows/static-analysis.yml`](.github/workflows/static-analysis.yml) (runs `mvn verify`; Sonar step only when secrets are present).
+
 ## Design Decisions
 
 Highlights from the [HLD](docs/high-level-design.md):
@@ -187,6 +209,7 @@ Highlights from the [HLD](docs/high-level-design.md):
 | Redis user cache | Optional `user:{id}` read-through on `GetUserHandler` only | Faster GETs; invalidate on PATCH; **never** on authorize `FOR UPDATE` |
 | Bulk export | Cursor-paginated `GET /transactions?userId=` | Stable `created_at DESC, id DESC` pages; max limit 200; query-only |
 | Webhooks | Outbox `WEBHOOK` + HMAC `X-Signature` | Async after commit; authorize never waits on subscriber HTTP |
+| Static analysis | Sonar-ready JaCoCo + SpotBugs/PMD/Checkstyle on `verify` | CI quality gate; no Sonar in app Compose |
 | Validation | Bean Validation on DTOs **and** handler guards | Contract at the edge; invariants for non-HTTP callers |
 | Logging | SLF4J via `LogFactory` + Logback JSON + MDC | Never `System.out`; correlate via `requestId` |
 

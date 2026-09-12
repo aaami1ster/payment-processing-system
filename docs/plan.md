@@ -1071,11 +1071,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T11.1 — Static analysis tooling**  
+- [x] **T11.1 — Static analysis tooling**  
   **Description:** Prefer Sonar-ready JaCoCo + document `sonar:sonar`; and/or SpotBugs/PMD on verify.  
   **Acceptance:** Documented commands; no compose Sonar required for app runtime.
 
-- [ ] **T11.2 — README / CI notes**  
+- [x] **T11.2 — README / CI notes**  
   **Description:** How to run locally/CI; quality gate expectations.  
   **Acceptance:** New contributor can run analysis from docs.
 
@@ -1154,7 +1154,7 @@ Hard rules:
 - [x] Phase 8 — Redis cache (optional)
 - [x] Phase 9 — Bulk export (optional)
 - [x] Phase 10 — Webhooks (optional)
-- [ ] Phase 11 — Static analysis (optional)
+- [x] Phase 11 — Static analysis (optional)
 
 **First impressive demo:** end of **Phase 3**.  
 **Challenge-complete demo:** end of **Phase 6**.

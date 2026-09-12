@@ -15,11 +15,13 @@ import java.util.Optional;
  */
 public final class VelocityRule implements FraudRule {
 
+    private static final int MIN_THRESHOLD = 1;
+
     private final int threshold;
 
     public VelocityRule(int threshold) {
-        if (threshold < 1) {
-            throw new IllegalArgumentException("velocity threshold must be >= 1");
+        if (threshold < MIN_THRESHOLD) {
+            throw new IllegalArgumentException("velocity threshold must be >= " + MIN_THRESHOLD);
         }
         this.threshold = threshold;
     }

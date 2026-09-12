@@ -15,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -171,7 +172,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private static boolean isJson(HttpServletRequest request) {
         String contentType = request.getContentType();
-        return contentType != null && contentType.toLowerCase().contains("application/json");
+        return contentType != null && contentType.toLowerCase(Locale.ROOT).contains("application/json");
     }
 
     private static String clientIp(HttpServletRequest request) {

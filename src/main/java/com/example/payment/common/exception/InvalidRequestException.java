@@ -1,5 +1,6 @@
 package com.example.payment.common.exception;
 
+import java.io.Serial;
 import lombok.Getter;
 
 /**
@@ -8,6 +9,9 @@ import lombok.Getter;
  */
 @Getter
 public class InvalidRequestException extends RuntimeException {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     private final String field;
     private final String code;

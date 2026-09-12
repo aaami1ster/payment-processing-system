@@ -6,6 +6,20 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 11 sonar static analysis`
+
+#### Added
+
+- Wire Sonar-ready JaCoCo XML reporting and the Sonar Maven plugin for optional `sonar:sonar` CI uploads
+- Run SpotBugs (High), PMD, and Checkstyle on `mvn verify` with lean configs under `config/`
+- Add a sample GitHub Actions workflow that runs verify and optionally uploads to Sonar when secrets exist
+- Document Code quality commands and gate expectations in the README
+
+#### Changed
+
+- Mark Phase 11 plan tasks T11.1–T11.2 done
+- Clear SpotBugs/PMD findings that blocked the new verify gate (Locale case conversion, `serialVersionUID`, velocity threshold constant)
+
 ### MR: `feat: add phase 10 signed async webhooks`
 
 #### Added
