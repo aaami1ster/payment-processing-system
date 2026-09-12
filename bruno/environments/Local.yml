@@ -3,15 +3,15 @@ variables:
   - name: baseUrl
     value: http://localhost:8080
   - name: userId
-    value: ""
+    value: 877e07a5-0002-413e-bb6f-a0d64d678899
   - name: transactionId
-    value: ""
+    value: e79b1a72-bd3b-45ac-b458-6d23f4f3de68
   - name: idempotencyKey
-    value: ""
+    value: idem-1789223430144-z982oyd2
   - name: merchantId
     value: mch_bruno_demo
   - name: sampleEmail
-    value: ""
+    value: alice.bruno+1789223439771@example.com
   - name: usersNextCursor
     value: ""
   - name: declineUserId
