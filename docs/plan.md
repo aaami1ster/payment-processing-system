@@ -398,19 +398,19 @@ mvn -q -Dtest='*Fraud*,*Rule*' test
 
 ### Tasks
 
-- [ ] **T2.1 — Fraud types + engine**  
+- [x] **T2.1 — Fraud types + engine**  
   **Description:** Interfaces/records/enums; engine runs all rules; DECLINE > FLAG > APPROVED.  
   **Acceptance:** Aggregation matches LLD; all rules always evaluate.
 
-- [ ] **T2.2 — Four rule implementations**  
+- [x] **T2.2 — Four rule implementations**  
   **Description:** AmountWithoutApproval, Velocity, HighRiskCategory, NewUserHighAmount per LLD exact conditions.  
   **Acceptance:** Thresholds/categories from `FraudProperties` / config where specified; Clock used for windows.
 
-- [ ] **T2.3 — Domain unit tests**  
+- [x] **T2.3 — Domain unit tests**  
   **Description:** Each rule; aggregation combinations; Rule 2 inclusive 60s edge; Rule 4 age edges.  
   **Acceptance:** Fixed Clock tests; no Spring context; failures clearly name the rule.
 
-- [ ] **T2.4 — README fraud blurb**  
+- [x] **T2.4 — README fraud blurb**  
   **Description:** Document the four rules and that FLAGGED is a successful auth.  
   **Acceptance:** README matches LLD semantics (DECLINED vs 503 distinction mentioned).
 
@@ -1145,7 +1145,7 @@ Hard rules:
 
 - [x] Phase 0 — Bootstrap & runtime
 - [x] Phase 1 — Users API
-- [ ] Phase 2 — Fraud domain
+- [x] Phase 2 — Fraud domain
 - [x] Phase 3 — Process transaction MVP
 - [x] Phase 4 — Mongo audit publisher
 - [ ] Phase 5 — API polish & observability

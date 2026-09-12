@@ -16,6 +16,10 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 - Cover success, simulated Mongo outage + recovery, and duplicate delivery with Testcontainers
 - Document why outbox / why Mongo in the README
 
+#### Changed
+
+- Bind Mongo via Spring Boot 4 `spring.mongodb.uri` and disable auto-index-creation so Mongo downtime does not block app startup
+
 ### MR: `feat: add phase 3 process transaction MVP`
 
 #### Added

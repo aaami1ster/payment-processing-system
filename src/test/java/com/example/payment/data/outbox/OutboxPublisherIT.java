@@ -117,12 +117,14 @@ class OutboxPublisherIT {
     @Test
     void paymentSucceedsWhenMongoDownThenRecovers() throws Exception {
         String userId = createUser("audit-down+" + System.currentTimeMillis() + "@example.com");
-        String transactionId = processApproved(userId);
-        assertThat(outboxStatus(transactionId)).isEqualTo("PENDING");
 
+        // Simulate Mongo unavailable before authorize — POST must still succeed (HLD: Mongo not on request path)
         doThrow(new DataAccessResourceFailureException("simulated mongo outage"))
                 .when(mongoTemplate)
                 .insert(any(AuditLogDocument.class));
+
+        String transactionId = processApproved(userId);
+        assertThat(outboxStatus(transactionId)).isEqualTo("PENDING");
 
         outboxPublisher.publishBatch();
         assertThat(outboxStatus(transactionId)).isEqualTo("PENDING");
@@ -133,20 +135,26 @@ class OutboxPublisherIT {
         assertThat(attempts).isGreaterThanOrEqualTo(1);
         assertThat(mongoTemplate.findById(transactionId, AuditLogDocument.class)).isNull();
 
+        // Another payment while Mongo is still down must also return 201 with PENDING outbox
+        String secondTxn = processApproved(userId);
+        assertThat(outboxStatus(secondTxn)).isEqualTo("PENDING");
+
         reset(mongoTemplate);
         jdbcTemplate.update(
                 "UPDATE audit_outbox SET next_attempt_at = now() - interval '1 second' WHERE status = 'PENDING'");
 
-        assertThat(outboxPublisher.publishBatch()).isEqualTo(1);
+        assertThat(outboxPublisher.publishBatch()).isEqualTo(2);
         assertThat(outboxStatus(transactionId)).isEqualTo("PUBLISHED");
+        assertThat(outboxStatus(secondTxn)).isEqualTo("PUBLISHED");
         assertThat(mongoTemplate.findById(transactionId, AuditLogDocument.class)).isNotNull();
+        assertThat(mongoTemplate.findById(secondTxn, AuditLogDocument.class)).isNotNull();
     }
 
     @Test
     void duplicateMongoInsertIsTreatedAsSuccess() {
         UUID transactionId = UUID.randomUUID();
         Instant now = Instant.parse("2026-09-10T16:01:02Z");
-        String payload =
+        String originalPayload =
                 """
                 {
                   "transactionId":"%s",
@@ -155,24 +163,29 @@ class OutboxPublisherIT {
                   "rulesTriggered":[],
                   "userContext":{"kycStatus":"PENDING","preApprovedTransactionLimit":null,"userCreatedAt":"%s"},
                   "amount":"50.00",
-                  "merchantId":"mch_dup",
+                  "merchantId":"mch_original",
                   "category":"GROCERIES",
                   "timestamp":"%s"
                 }
                 """
                         .formatted(transactionId, UUID.randomUUID(), now, now);
 
-        AuditLogDocument existing = objectMapper.readValue(payload, AuditLogDocument.class);
+        AuditLogDocument existing = objectMapper.readValue(originalPayload, AuditLogDocument.class);
         existing.setId(transactionId.toString());
         mongoTemplate.insert(existing);
 
+        // Different merchant in outbox payload — insert must not upsert/overwrite the original
+        String retryPayload = originalPayload.replace("mch_original", "mch_should_not_overwrite");
         outboxRepository.save(new AuditOutboxEntity(
-                transactionId, payload, OutboxStatus.PENDING, 0, null, now.minusSeconds(1), now));
+                transactionId, retryPayload, OutboxStatus.PENDING, 0, null, now.minusSeconds(1), now));
 
         int published = outboxPublisher.publishBatch();
         assertThat(published).isEqualTo(1);
         assertThat(outboxStatus(transactionId.toString())).isEqualTo("PUBLISHED");
         assertThat(mongoTemplate.findAll(AuditLogDocument.class)).hasSize(1);
+        AuditLogDocument kept = mongoTemplate.findById(transactionId.toString(), AuditLogDocument.class);
+        assertThat(kept).isNotNull();
+        assertThat(kept.getMerchantId()).isEqualTo("mch_original");
     }
 
     @Test
