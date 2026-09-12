@@ -6,6 +6,20 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 1 user management API`
+
+#### Added
+
+- Expose create, get, patch, and cursor-paginated list endpoints under `/api/v1/users`
+- Return a shared `ApiResponse` envelope with request IDs and structured error codes
+- Enforce layered validation via Bean Validation on DTOs and business guards in handlers
+- Add Bruno list-users coverage and README examples for the Users API
+- Cover user handlers and HTTP API with unit and Testcontainers-backed tests
+
+#### Changed
+
+- Document layered request validation in the HLD and LLD for reuse on later endpoints
+
 ### MR: `feat: bootstrap phase 0 runtime foundation`
 
 #### Added
