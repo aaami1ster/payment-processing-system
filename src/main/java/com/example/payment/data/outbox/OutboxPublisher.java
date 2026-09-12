@@ -60,6 +60,7 @@ public class OutboxPublisher {
     private final Counter publishFailures;
     private final Timer publishDuration;
     private final AtomicLong pendingCount = new AtomicLong(0);
+    private final AtomicLong oldestPendingAgeSeconds = new AtomicLong(0);
     private final AtomicLong indexesEnsured = new AtomicLong(0);
 
     public OutboxPublisher(
@@ -89,6 +90,9 @@ public class OutboxPublisher {
                 .register(meterRegistry);
         Gauge.builder("outbox.pending.count", pendingCount, AtomicLong::get)
                 .description("Approximate PENDING outbox backlog")
+                .register(meterRegistry);
+        Gauge.builder("outbox.oldest.pending.age", oldestPendingAgeSeconds, AtomicLong::get)
+                .description("Age in seconds of the oldest PENDING outbox row")
                 .register(meterRegistry);
     }
 
@@ -232,11 +236,25 @@ public class OutboxPublisher {
     }
 
     private void refreshPendingGauge() {
+        Instant now = Instant.now(clock);
         Number count = (Number) entityManager
                 .createNativeQuery(
                         "SELECT COUNT(*) FROM audit_outbox WHERE status = 'PENDING'")
                 .getSingleResult();
         pendingCount.set(count == null ? 0L : count.longValue());
+
+        Object oldestCreated = entityManager
+                .createNativeQuery(
+                        "SELECT MIN(created_at) FROM audit_outbox WHERE status = 'PENDING'")
+                .getSingleResult();
+        if (oldestCreated instanceof Instant createdAt) {
+            oldestPendingAgeSeconds.set(Math.max(0L, Duration.between(createdAt, now).getSeconds()));
+        } else if (oldestCreated instanceof java.sql.Timestamp ts) {
+            oldestPendingAgeSeconds.set(
+                    Math.max(0L, Duration.between(ts.toInstant(), now).getSeconds()));
+        } else {
+            oldestPendingAgeSeconds.set(0L);
+        }
     }
 
     static Duration backoff(int attemptsAfterFailure) {

@@ -19,6 +19,7 @@ runtime:
           expect(res.body.data).to.equal(null);
           expect(res.body.errors).to.be.an("array").that.is.not.empty;
           expect(res.body.errors.some(e => e.code === "NOT_FOUND")).to.equal(true);
+          expect(res.body.meta.requestId).to.be.a("string").that.is.not.empty;
         });
 
 settings:

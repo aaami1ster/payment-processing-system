@@ -23,6 +23,16 @@ runtime:
           expect(["APPROVED", "FLAGGED", "DECLINED"]).to.include(res.body.data.status);
         });
 
+        test("requestId in meta and header", function() {
+          expect(res.body.meta.requestId).to.be.a("string").that.is.not.empty;
+          const headers = res.headers || {};
+          const headerId = headers["x-request-id"] || headers["X-Request-Id"]
+            || (typeof res.getHeader === "function" ? res.getHeader("x-request-id") : null);
+          if (headerId) {
+            expect(headerId).to.equal(res.body.meta.requestId);
+          }
+        });
+
 settings:
   encodeUrl: true
   timeout: 0

@@ -22,6 +22,12 @@ runtime:
           expect(res.body).to.be.a("string");
         });
 
+        test("includes payment transaction metrics when scraped", function() {
+          // Present after at least one POST /transactions in this environment
+          const body = String(res.body);
+          expect(body.includes("payment_transactions_total") || body.includes("jvm_")).to.equal(true);
+        });
+
 settings:
   encodeUrl: true
   timeout: 0

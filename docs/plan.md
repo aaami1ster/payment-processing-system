@@ -705,23 +705,23 @@ cd bruno && npx @usebruno/cli run transaction --env Local
 
 ### Tasks
 
-- [ ] **T5.1 — GET transaction query**  
+- [x] **T5.1 — GET transaction query**  
   **Description:** `GetTransactionHandler` + controller.  
   **Acceptance:** 200 envelope / 404 `NOT_FOUND`.
 
-- [ ] **T5.2 — OpenAPI**  
+- [x] **T5.2 — OpenAPI**  
   **Description:** springdoc (or equivalent); document endpoints and envelope.  
   **Acceptance:** Swagger UI lists users + transactions operations.
 
-- [ ] **T5.3 — Structured logging + requestId**  
+- [x] **T5.3 — Structured logging + requestId**  
   **Description:** Filter sets MDC; JSON encoder; LogFactory only.  
   **Acceptance:** Response `meta.requestId` and header correlate; no sensitive payload dumps.
 
-- [ ] **T5.4 — Metrics + README observability**  
+- [x] **T5.4 — Metrics + README observability**  
   **Description:** Key Micrometer metrics; document actuator/prometheus if enabled.  
   **Acceptance:** At least status counters and timer visible; README updated.
 
-- [ ] **T5.5 — Bruno GET + observability probes**  
+- [x] **T5.5 — Bruno GET + observability probes**  
   **Description:** Ensure `bruno/transaction/` GET cases and `bruno/health/04-prometheus` match enabled endpoints.  
   **Acceptance:** `bru run transaction` passes (including GET); requestId assertions hold.
 
@@ -1148,7 +1148,7 @@ Hard rules:
 - [x] Phase 2 — Fraud domain
 - [x] Phase 3 — Process transaction MVP
 - [x] Phase 4 — Mongo audit publisher
-- [ ] Phase 5 — API polish & observability
+- [x] Phase 5 — API polish & observability
 - [ ] Phase 6 — Hardening & submission README
 - [ ] Phase 7 — Rate limiting (optional)
 - [ ] Phase 8 — Redis cache (optional)

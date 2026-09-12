@@ -6,6 +6,7 @@ import com.example.payment.common.exception.DuplicateEmailException;
 import com.example.payment.common.exception.IdempotencyConflictException;
 import com.example.payment.common.exception.InvalidRequestException;
 import com.example.payment.common.exception.ServiceUnavailableException;
+import com.example.payment.common.exception.TransactionNotFoundException;
 import com.example.payment.common.exception.UserNotFoundException;
 import com.example.payment.common.logging.LogFactory;
 import com.example.payment.common.web.RequestIdFilter;
@@ -39,6 +40,16 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.failure(
                         "User not found",
                         ApiError.of("USER_NOT_FOUND", ex.getMessage()),
+                        RequestIdFilter.resolve(request)));
+    }
+
+    @ExceptionHandler(TransactionNotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTransactionNotFound(
+            TransactionNotFoundException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.failure(
+                        "Transaction not found",
+                        ApiError.of("NOT_FOUND", ex.getMessage()),
                         RequestIdFilter.resolve(request)));
     }
 

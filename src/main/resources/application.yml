@@ -68,6 +68,12 @@ management:
       readiness:
         include: readinessState,db
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
 fraud:
   high-risk-categories:
     - GAMBLING

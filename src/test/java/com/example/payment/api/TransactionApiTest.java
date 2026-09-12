@@ -5,8 +5,10 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -197,6 +199,48 @@ class TransactionApiTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.status", equalTo("APPROVED")))
                 .andExpect(jsonPath("$.errors", empty()));
+    }
+
+    @Test
+    void getTransactionOkAndNotFound() throws Exception {
+        String userId = createUser("get-txn+" + System.currentTimeMillis() + "@example.com");
+
+        MvcResult created = mockMvc.perform(post("/api/v1/transactions")
+                        .header("X-Request-Id", "req_get_txn_demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "amount": 50.00,
+                                  "userId": "%s",
+                                  "merchantId": "mch_demo",
+                                  "category": "GROCERIES"
+                                }
+                                """.formatted(userId)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("X-Request-Id", "req_get_txn_demo"))
+                .andExpect(jsonPath("$.meta.requestId", equalTo("req_get_txn_demo")))
+                .andReturn();
+
+        String transactionId = objectMapper
+                .readTree(created.getResponse().getContentAsString())
+                .get("data")
+                .get("transactionId")
+                .asString();
+
+        mockMvc.perform(get("/api/v1/transactions/{id}", transactionId)
+                        .header("X-Request-Id", "req_fetch_txn"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Request-Id", "req_fetch_txn"))
+                .andExpect(jsonPath("$.data.transactionId", equalTo(transactionId)))
+                .andExpect(jsonPath("$.data.status", equalTo("APPROVED")))
+                .andExpect(jsonPath("$.errors", empty()))
+                .andExpect(jsonPath("$.meta.requestId", equalTo("req_fetch_txn")));
+
+        mockMvc.perform(get("/api/v1/transactions/{id}", "00000000-0000-0000-0000-000000000000"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.data", nullValue()))
+                .andExpect(jsonPath("$.errors[0].code", equalTo("NOT_FOUND")))
+                .andExpect(jsonPath("$.meta.requestId", notNullValue()));
     }
 
     @Test

@@ -30,6 +30,7 @@ import com.example.payment.domain.transaction.TransactionStatus;
 import com.example.payment.domain.user.KycStatus;
 import com.example.payment.service.mapper.TransactionMapper;
 import com.example.payment.service.mapper.UserMapper;
+import com.example.payment.service.metrics.PaymentMetrics;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -62,6 +63,9 @@ class ProcessTransactionHandlerTest {
     @Mock
     private AuditOutboxJpaRepository outboxRepository;
 
+    @Mock
+    private PaymentMetrics paymentMetrics;
+
     private ProcessTransactionHandler handler;
 
     @BeforeEach
@@ -86,7 +90,8 @@ class ProcessTransactionHandlerTest {
                 new UserMapper(),
                 new TransactionMapper(),
                 JsonMapper.builder().build(),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                paymentMetrics);
     }
 
     @Test

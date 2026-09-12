@@ -13,6 +13,8 @@ import com.example.payment.service.command.UpdateUserHandler;
 import com.example.payment.service.mapper.UserMapper;
 import com.example.payment.service.query.GetUserHandler;
 import com.example.payment.service.query.ListUsersHandler;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
+@Tag(name = "Users", description = "User lifecycle and KYC")
 public class UserController {
 
     private final CreateUserHandler createUserHandler;
@@ -41,6 +44,7 @@ public class UserController {
     private final UserMapper userMapper;
 
     @PostMapping
+    @Operation(summary = "Create a user")
     public ResponseEntity<ApiResponse<UserResponse>> create(
             @Valid @RequestBody CreateUserRequest request,
             HttpServletRequest httpRequest) {
@@ -51,6 +55,7 @@ public class UserController {
     }
 
     @GetMapping({"", "/"})
+    @Operation(summary = "List users (cursor page)")
     public ResponseEntity<ApiResponse<UserPageResponse>> list(
             @RequestParam(value = "cursor", required = false) String cursor,
             @RequestParam(value = "limit", required = false) Integer limit,
@@ -64,6 +69,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
+    @Operation(summary = "Get a user by id")
     public ResponseEntity<ApiResponse<UserResponse>> get(
             @PathVariable("id") UUID id,
             HttpServletRequest httpRequest) {
@@ -73,6 +79,7 @@ public class UserController {
     }
 
     @PatchMapping("/{id}")
+    @Operation(summary = "Update user KYC and/or pre-approved limit")
     public ResponseEntity<ApiResponse<UserResponse>> update(
             @PathVariable("id") UUID id,
             @Valid @RequestBody UpdateUserRequest request,
