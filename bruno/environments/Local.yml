@@ -3,18 +3,18 @@ variables:
   - name: baseUrl
     value: http://localhost:8080
   - name: userId
-    value: 877e07a5-0002-413e-bb6f-a0d64d678899
+    value: 5399aa3e-94e3-43a8-8937-ca46d4887613
   - name: transactionId
-    value: e79b1a72-bd3b-45ac-b458-6d23f4f3de68
+    value: 08926564-3751-42ea-a280-d86487a70f7f
   - name: idempotencyKey
     value: idem-1789223430144-z982oyd2
   - name: merchantId
     value: mch_bruno_demo
   - name: sampleEmail
-    value: alice.bruno+1789223439771@example.com
+    value: alice.bruno+1789228763416@example.com
   - name: usersNextCursor
     value: ""
   - name: declineUserId
-    value: ""
+    value: e1cfc69f-3d54-4b95-8b30-54169eaf7240
   - name: idempotencyKeyDecline
-    value: ""
+    value: idem-decline-1789228881743
