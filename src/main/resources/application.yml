@@ -125,10 +125,8 @@ springdoc:
 
 fraud:
   high-risk-categories:
-    - GAMBLING
     - CRYPTO
     - CASH_ADVANCE
-    - ADULT
   amount-without-approval-threshold: 10000
   high-risk-amount-threshold: 5000
   new-user-amount-threshold: 5000

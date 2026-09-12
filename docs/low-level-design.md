@@ -251,7 +251,7 @@ classDiagram
 
 - `TransactionStatus`: `APPROVED` | `FLAGGED` | `DECLINED`
 - `KycStatus`: `PENDING` | `VERIFIED` | `REJECTED`
-- `Category`: `GROCERIES`, `TRAVEL`, `ELECTRONICS`, `GAMBLING`, `CRYPTO`, `CASH_ADVANCE`, `MONEY_TRANSFER`, `ADULT`, `OTHER`
+- `Category`: `GROCERIES`, `TRAVEL`, `ELECTRONICS`, `CRYPTO`, `CASH_ADVANCE`, `MONEY_TRANSFER`, `OTHER`
 - `Severity`: `ALLOW` | `FLAG` | `DECLINE`
 - `OutboxStatus`: `PENDING` | `PUBLISHED`
 
