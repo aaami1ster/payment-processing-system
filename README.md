@@ -187,7 +187,14 @@ Highlights from the [HLD](docs/high-level-design.md):
 
 **Authorize path:** load user with `FOR UPDATE` inside `ProcessTransactionHandler` — not via `GetUserHandler`.
 
-**Rate limit demo (burst → 429):** with defaults (`user` = 60/min), temporarily lower limits or loop `POST /transactions` for one `userId` until HTTP `429` with `RATE_LIMIT_EXCEEDED`. Over-limit requests never insert `transactions` or `audit_outbox`. Config: `payment.rate-limit.*` in `application.yml` (set `enabled: false` to disable).
+**Rate limit demo (burst → 429):**
+
+```bash
+docker compose up --build -d   # required after pulling Phase 7 — old images have no RateLimitFilter
+./scripts/demo-rate-limit.sh
+```
+
+Loops `POST /api/v1/transactions` for one `userId` until HTTP `429` + `RATE_LIMIT_EXCEEDED`, then confirms rejected calls do not insert `transactions` / `audit_outbox`. Defaults: `user` = 60/min (`payment.rate-limit.*` in `application.yml`; set `enabled: false` to disable).
 
 ## Domain UML
 
