@@ -398,19 +398,19 @@ mvn -q -Dtest='*Fraud*,*Rule*' test
 
 ### Tasks
 
-- [ ] **T2.1 — Fraud types + engine**  
+- [x] **T2.1 — Fraud types + engine**  
   **Description:** Interfaces/records/enums; engine runs all rules; DECLINE > FLAG > APPROVED.  
   **Acceptance:** Aggregation matches LLD; all rules always evaluate.
 
-- [ ] **T2.2 — Four rule implementations**  
+- [x] **T2.2 — Four rule implementations**  
   **Description:** AmountWithoutApproval, Velocity, HighRiskCategory, NewUserHighAmount per LLD exact conditions.  
   **Acceptance:** Thresholds/categories from `FraudProperties` / config where specified; Clock used for windows.
 
-- [ ] **T2.3 — Domain unit tests**  
+- [x] **T2.3 — Domain unit tests**  
   **Description:** Each rule; aggregation combinations; Rule 2 inclusive 60s edge; Rule 4 age edges.  
   **Acceptance:** Fixed Clock tests; no Spring context; failures clearly name the rule.
 
-- [ ] **T2.4 — README fraud blurb**  
+- [x] **T2.4 — README fraud blurb**  
   **Description:** Document the four rules and that FLAGGED is a successful auth.  
   **Acceptance:** README matches LLD semantics (DECLINED vs 503 distinction mentioned).
 
@@ -611,19 +611,19 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T4.1 — Mongo audit document + repository**  
+- [x] **T4.1 — Mongo audit document + repository**  
   **Description:** Append-only insert; payload matches LLD JSON shape including userContext snapshot.  
   **Acceptance:** `_id = transactionId`; no upsert overwrite.
 
-- [ ] **T4.2 — OutboxPublisher worker**  
+- [x] **T4.2 — OutboxPublisher worker**  
   **Description:** Scheduled poll; SKIP LOCKED; mark PUBLISHED; backoff on failure.  
   **Acceptance:** Multi-instance safe claim; DuplicateKeyException treated as delivered.
 
-- [ ] **T4.3 — Resilience + metrics hooks**  
+- [x] **T4.3 — Resilience + metrics hooks**  
   **Description:** Timeouts/circuit on Mongo publish; basic counters for pending/failures if easy.  
   **Acceptance:** Mongo down does not fail POST /transactions.
 
-- [ ] **T4.4 — Publisher tests + README resilience note**  
+- [x] **T4.4 — Publisher tests + README resilience note**  
   **Description:** Testcontainers flows for success, outage, duplicate retry.  
   **Acceptance:** Tests green; README states PG is SoR and Mongo is projection.
 
@@ -1145,9 +1145,9 @@ Hard rules:
 
 - [x] Phase 0 — Bootstrap & runtime
 - [x] Phase 1 — Users API
-- [ ] Phase 2 — Fraud domain
+- [x] Phase 2 — Fraud domain
 - [x] Phase 3 — Process transaction MVP
-- [ ] Phase 4 — Mongo audit publisher
+- [x] Phase 4 — Mongo audit publisher
 - [ ] Phase 5 — API polish & observability
 - [ ] Phase 6 — Hardening & submission README
 - [ ] Phase 7 — Rate limiting (optional)

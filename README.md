@@ -122,7 +122,7 @@ mvn -q -Dtest='*Fraud*,*Rule*,*VelocityWindow*' test
 
 ## Process transaction (Phase 3)
 
-**Core guarantee:** no `APPROVED` / `FLAGGED` / `DECLINED` is returned unless the transaction **and** its audit outbox row were committed in PostgreSQL. Mongo publish is async (Phase 4); outbox may stay `PENDING`.
+**Core guarantee:** no `APPROVED` / `FLAGGED` / `DECLINED` is returned unless the transaction **and** its audit outbox row were committed in PostgreSQL. Mongo publish is async (Phase 4); the client never waits on Mongo.
 
 Base path: `/api/v1/transactions`. Optional header: `Idempotency-Key` (fingerprint = SHA-256 of `userId|merchantId|amount|category`).
 
@@ -158,7 +158,7 @@ curl -s -X POST http://localhost:8080/api/v1/transactions \
   -H "Idempotency-Key: demo-key-1" \
   -d "{\"amount\":100.00,\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"category\":\"GROCERIES\"}"
 
-# 6) Verify durable rows (outbox PENDING is OK until Phase 4)
+# 6) Verify durable rows (outbox becomes PUBLISHED once the Phase 4 publisher drains)
 docker compose exec postgres psql -U payments -d payments \
   -c "SELECT id, status, amount FROM transactions ORDER BY created_at DESC LIMIT 5;"
 docker compose exec postgres psql -U payments -d payments \
@@ -174,6 +174,31 @@ docker compose exec postgres psql -U payments -d payments \
 | PostgreSQL / commit failure | `503` | `SERVICE_UNAVAILABLE` |
 
 Authorize path loads the user with `SELECT … FOR UPDATE` inside `ProcessTransactionHandler` — never via `GetUserHandler`.
+
+## Async audit (Phase 4)
+
+**Why an outbox (not sync dual-write)?** The authorize path must never wait on Mongo. PostgreSQL commits the transaction **and** an `audit_outbox` row in one DB transaction; that is the durable decision. A background `OutboxPublisher` claims `PENDING` rows with `FOR UPDATE SKIP LOCKED`, inserts an immutable Mongo `audit_logs` document (`_id = transactionId`), and marks `PUBLISHED`. Retries use exponential backoff (`next_attempt_at` / `attempts`). Duplicate `_id` on retry is treated as success (at-least-once).
+
+**Why Mongo at all?** PostgreSQL alone could store audit rows atomically and would be simpler. Mongo is a separate **audit projection** to demonstrate resilience across heterogeneous stores. PostgreSQL remains the system of record; Mongo may lag without blocking payments.
+
+```bash
+# After POST /transactions, wait a moment then inspect Mongo
+docker compose exec mongo mongosh payments_audit --quiet --eval 'db.audit_logs.find().limit(3).toArray()'
+
+# Outbox should move PENDING → PUBLISHED
+docker compose exec postgres psql -U payments -d payments \
+  -c "SELECT transaction_id, status, attempts FROM audit_outbox ORDER BY id DESC LIMIT 5;"
+
+# Mongo down: payments still return 201; outbox stays PENDING until Mongo recovers
+docker compose stop mongo
+# POST /api/v1/transactions → 201, outbox PENDING
+docker compose start mongo
+# publisher drains → audit document appears, outbox PUBLISHED
+```
+
+```bash
+mvn -q -Dtest='OutboxPublisherIT' test
+```
 
 ```bash
 cd bruno && npx @usebruno/cli run user --env Local

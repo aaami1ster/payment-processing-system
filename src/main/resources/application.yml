@@ -19,12 +19,27 @@ spring:
         jdbc:
           time_zone: UTC
 
+  mongodb:
+    uri: ${SPRING_MONGODB_URI:${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/payments_audit?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000&socketTimeoutMS=2000}}
+
   data:
     mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/payments_audit}
+      # Do not create indexes during MongoTemplate construction — that would block startup if Mongo is down
+      auto-index-creation: false
 
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
+
+payment:
+  outbox:
+    publisher:
+      enabled: true
+      batch-size: 50
+      poll-interval-ms: 1000
+      mongo-timeout-ms: 2000
+      circuit-failure-rate-threshold: 50
+      circuit-sliding-window-size: 10
+      circuit-wait-open-ms: 10000
 
 server:
   port: ${SERVER_PORT:8080}
