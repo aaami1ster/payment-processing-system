@@ -6,6 +6,19 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 8 optional redis user query cache`
+
+#### Added
+
+- Cache `GET /users/{id}` via optional Redis `user:{id}` read-through with TTL on `GetUserHandler`
+- Evict the cache key from `UpdateUserHandler` so PATCH results stay fresh
+- Fall back to PostgreSQL when Redis is disabled or errors; keep readiness independent of Redis
+- Add Compose `redis` profile and Testcontainers coverage (`UserCacheIT`) proving authorize path skips Redis
+
+#### Changed
+
+- Mark Phase 8 plan tasks T8.1–T8.2 done
+
 ### MR: `feat: add phase 7 HTTP rate limiting`
 
 #### Added

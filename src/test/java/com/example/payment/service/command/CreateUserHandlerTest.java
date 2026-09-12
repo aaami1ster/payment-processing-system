@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.example.payment.common.exception.DuplicateEmailException;
+import com.example.payment.common.exception.InvalidRequestException;
 import com.example.payment.data.postgres.entity.UserEntity;
 import com.example.payment.data.postgres.repository.UserJpaRepository;
 import com.example.payment.domain.user.KycStatus;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @ExtendWith(MockitoExtension.class)
 class CreateUserHandlerTest {
@@ -60,6 +62,24 @@ class CreateUserHandlerTest {
         when(userRepository.existsByEmailIgnoreCase("alice@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> handler.handle("alice@example.com", KycStatus.PENDING))
+                .isInstanceOf(DuplicateEmailException.class);
+    }
+
+    @Test
+    void rejectsBlankEmail() {
+        assertThatThrownBy(() -> handler.handle("  ", null))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> handler.handle(null, KycStatus.PENDING))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void mapsSaveRaceToDuplicateEmail() {
+        when(userRepository.existsByEmailIgnoreCase("alice@example.com")).thenReturn(false);
+        when(userRepository.save(any(UserEntity.class)))
+                .thenThrow(new DataIntegrityViolationException("unique_email"));
+
+        assertThatThrownBy(() -> handler.handle("alice@example.com", KycStatus.VERIFIED))
                 .isInstanceOf(DuplicateEmailException.class);
     }
 }

@@ -26,6 +26,11 @@ spring:
     mongodb:
       # Do not create indexes during MongoTemplate construction — that would block startup if Mongo is down
       auto-index-creation: false
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 200ms
+      connect-timeout: 200ms
 
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
@@ -51,6 +56,12 @@ payment:
     ip:
       capacity: 120
       window-seconds: 60
+  cache:
+    user:
+      # Optional query-side cache (Phase 8). Off by default — core stack needs no Redis.
+      enabled: ${PAYMENT_CACHE_USER_ENABLED:false}
+      ttl-seconds: 60
+      key-prefix: "user:"
 
 server:
   port: ${SERVER_PORT:8080}
@@ -72,6 +83,9 @@ management:
       enabled: true
     # Mongo is optional for readiness — payments stay available if audit projection lags
     mongo:
+      enabled: false
+    # Redis is optional (query cache only) — never block readiness
+    redis:
       enabled: false
     group:
       liveness:

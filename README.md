@@ -182,10 +182,26 @@ Highlights from the [HLD](docs/high-level-design.md):
 | Why Mongo at all? | Separate audit projection | Demonstrates heterogeneous-store resilience; PG remains SoR |
 | Idempotency | Optional key + SHA-256 fingerprint + partial unique index | Safe retries; `409` on fingerprint conflict |
 | Rate limiting | In-process Bucket4j filter on `/api/v1/**` (user / merchant / IP) | Caps abuse before handlers; does **not** replace Rule 2 |
+| Redis user cache | Optional `user:{id}` read-through on `GetUserHandler` only | Faster GETs; invalidate on PATCH; **never** on authorize `FOR UPDATE` |
 | Validation | Bean Validation on DTOs **and** handler guards | Contract at the edge; invariants for non-HTTP callers |
 | Logging | SLF4J via `LogFactory` + Logback JSON + MDC | Never `System.out`; correlate via `requestId` |
 
-**Authorize path:** load user with `FOR UPDATE` inside `ProcessTransactionHandler` — not via `GetUserHandler`.
+**Authorize path:** load user with `FOR UPDATE` inside `ProcessTransactionHandler` — not via `GetUserHandler` or Redis.
+
+**Optional Redis (Phase 8):**
+
+```bash
+# Core stack (no Redis):
+docker compose up --build -d
+
+# With query cache:
+# in .env: PAYMENT_CACHE_USER_ENABLED=true
+docker compose --profile redis up --build -d
+# Repeated GET /api/v1/users/{id} → logs `user.cache.hit`; PATCH evicts `user:{id}`
+# POST /transactions still uses SELECT … FOR UPDATE on PostgreSQL only
+```
+
+Config: `payment.cache.user.enabled` (default `false`), `ttl-seconds`, `spring.data.redis.*`. Redis down or disabled → GET users fall through to Postgres; readiness does not require Redis.
 
 **Rate limit demo (burst → 429):**
 
