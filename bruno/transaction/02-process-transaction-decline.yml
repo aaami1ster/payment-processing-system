@@ -16,7 +16,7 @@ http:
         "amount": 12000.00,
         "userId": "{{declineUserId}}",
         "merchantId": "{{merchantId}}",
-        "category": "GROCERY"
+        "category": "GROCERIES"
       }
 
 runtime:

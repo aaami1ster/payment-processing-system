@@ -499,27 +499,27 @@ npx @usebruno/cli run transaction --env Local
 
 ### Tasks
 
-- [ ] **T3.1 — Transaction + outbox persistence**  
+- [x] **T3.1 — Transaction + outbox persistence**  
   **Description:** Entities/repos; save transaction and outbox in one `@Transactional`.  
   **Acceptance:** Rollback removes both; constraints enforce amount > 0 and idempotency uniqueness.
 
-- [ ] **T3.2 — ProcessTransactionHandler**  
+- [x] **T3.2 — ProcessTransactionHandler**  
   **Description:** Idempotency pre-check → BEGIN → FOR UPDATE → re-check → velocity → FraudEngine → persist → commit → return.  
   **Acceptance:** Matches HLD sequence; authorize path does not use GetUserHandler/cache.
 
-- [ ] **T3.3 — POST /api/v1/transactions API**  
+- [x] **T3.3 — POST /api/v1/transactions API**  
   **Description:** Optional `Idempotency-Key`; 201 for APPROVED/FLAGGED/DECLINED; 404/409/400/503 mapping.  
   **Acceptance:** Envelope rules: business status in `data.status`, never in `errors[]` for declines.
 
-- [ ] **T3.4 — Idempotency fingerprint**  
+- [x] **T3.4 — Idempotency fingerprint**  
   **Description:** Canonical SHA-256 of userId, merchantId, amount, category.  
   **Acceptance:** Same key+fingerprint replays; different fingerprint → 409 `IDEMPOTENCY_CONFLICT`.
 
-- [ ] **T3.5 — Tests + README demo script**  
+- [x] **T3.5 — Tests + README demo script**  
   **Description:** Rule outcomes, idempotency, missing user; README demo steps for Phase 3 exit.  
   **Acceptance:** Tests green; demo script reproducible on compose stack.
 
-- [ ] **T3.6 — Bruno transaction collection**  
+- [x] **T3.6 — Bruno transaction collection**  
   **Description:** Align `bruno/transaction/` POST/idempotency/error cases with live API.  
   **Acceptance:** Bruno transaction POST cases pass; DECLINED returns 201 with empty `errors[]`; replay/conflict behave as LLD.
 
@@ -1146,7 +1146,7 @@ Hard rules:
 - [x] Phase 0 — Bootstrap & runtime
 - [x] Phase 1 — Users API
 - [ ] Phase 2 — Fraud domain
-- [ ] Phase 3 — Process transaction MVP
+- [x] Phase 3 — Process transaction MVP
 - [ ] Phase 4 — Mongo audit publisher
 - [ ] Phase 5 — API polish & observability
 - [ ] Phase 6 — Hardening & submission README

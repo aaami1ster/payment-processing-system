@@ -6,6 +6,20 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 3 process transaction MVP`
+
+#### Added
+
+- Process payments via `POST /api/v1/transactions` with fraud evaluation under user-row `FOR UPDATE`
+- Persist transaction + audit outbox atomically; acknowledge decisions only after PostgreSQL commit
+- Support optional `Idempotency-Key` with SHA-256 fingerprint replay and `409 IDEMPOTENCY_CONFLICT`
+- Cover handler and API with unit/Testcontainers tests; document Phase 3 exit demo in the README
+
+#### Changed
+
+- Align Bruno transaction POST categories with domain `GROCERIES` enum values
+- Scope `.gitignore` `data/` to repo-root `/data/` so `com.example.payment.data` sources are tracked
+
 ### MR: `feat: add phase 2 fraud detection domain`
 
 #### Added
