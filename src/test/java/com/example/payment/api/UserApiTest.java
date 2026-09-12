@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -24,8 +24,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,12 +34,6 @@ import tools.jackson.databind.ObjectMapper;
         "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
         "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
         "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-        "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-        "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"
 })
 class UserApiTest {
 
@@ -55,18 +49,12 @@ class UserApiTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.mongodb.uri", () -> "mongodb://localhost:27017/unused");
+        registry.add("spring.data.mongodb.uri", () -> "mongodb://localhost:27017/unused");
         registry.add("payment.outbox.publisher.enabled", () -> "false");
         registry.add("spring.autoconfigure.exclude", () -> String.join(",",
                 "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
                 "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
-                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-                "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-                "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"));
+                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration"));
     }
 
     @Autowired
@@ -94,7 +82,7 @@ class UserApiTest {
                 .andReturn();
 
         JsonNode root = objectMapper.readTree(create.getResponse().getContentAsString());
-        String userId = root.get("data").get("id").asString();
+        String userId = root.get("data").get("id").asText();
 
         mockMvc.perform(get("/api/v1/users/{id}", userId))
                 .andExpect(status().isOk())
@@ -151,7 +139,7 @@ class UserApiTest {
         String userId = objectMapper.readTree(create.getResponse().getContentAsString())
                 .get("data")
                 .get("id")
-                .asString();
+                .asText();
 
         mockMvc.perform(patch("/api/v1/users/{id}", userId)
                         .contentType(MediaType.APPLICATION_JSON)

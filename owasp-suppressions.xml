@@ -12,4 +12,27 @@
         <packageUrl regex="true">^pkg:maven/org\.eclipse\.angus/angus-activation@.*$</packageUrl>
         <cpe>cpe:/a:eclipse:angus_mail</cpe>
     </suppress>
+
+    <!--
+      Boot 3.x / Framework 6.2.19 virtual patches (no commercial 6.2.20+ on Maven Central).
+      This app uses annotated @RestController APIs only — no XsltView and no WebMvc.fn SSE.
+    -->
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-47884 (XsltView SSRF/RCE): application does not register or use
+            XsltView / XSLT view resolution; controllers return JSON via @RestController only.
+            No catch-all /** view mappings. Framework 6.2.20+ is not published to Maven Central
+            for OSS consumers.
+        </notes>
+        <cve>CVE-2026-47884</cve>
+    </suppress>
+    <suppress>
+        <notes>
+            Mitigated CVE-2026-59313 (SSE CRLF injection): application does not use Spring MVC
+            functional routing (WebMvc.fn) or ServerResponse.sse(...). APIs are annotated
+            @RestController / @RestControllerAdvice only. Framework 6.2.20+ is not published
+            to Maven Central for OSS consumers.
+        </notes>
+        <cve>CVE-2026-59313</cve>
+    </suppress>
 </suppressions>

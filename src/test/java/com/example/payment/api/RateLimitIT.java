@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -22,8 +22,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Phase 7: HTTP rate limit is independent of fraud Rule 2; over-limit never persists.
@@ -35,12 +35,6 @@ import tools.jackson.databind.ObjectMapper;
         "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
         "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
         "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-        "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-        "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-        "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"
 })
 class RateLimitIT {
 
@@ -56,7 +50,7 @@ class RateLimitIT {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.mongodb.uri", () -> "mongodb://localhost:27017/unused");
+        registry.add("spring.data.mongodb.uri", () -> "mongodb://localhost:27017/unused");
         registry.add("payment.outbox.publisher.enabled", () -> "false");
         registry.add("payment.rate-limit.enabled", () -> "true");
         // Tight user bucket so burst is easy to demonstrate
@@ -67,13 +61,7 @@ class RateLimitIT {
         registry.add("spring.autoconfigure.exclude", () -> String.join(",",
                 "org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration",
                 "org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration",
-                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration",
-                "org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoRepositoriesAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveAutoConfiguration",
-                "org.springframework.boot.data.mongo.autoconfigure.DataMongoReactiveRepositoriesAutoConfiguration",
-                "org.springframework.boot.mongodb.health.autoconfigure.MongoHealthContributorAutoConfiguration"));
+                "org.springframework.boot.actuate.autoconfigure.mongo.MongoHealthContributorAutoConfiguration"));
     }
 
     @Autowired
@@ -165,6 +153,6 @@ class RateLimitIT {
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode root = objectMapper.readTree(create.getResponse().getContentAsString());
-        return root.get("data").get("id").asString();
+        return root.get("data").get("id").asText();
     }
 }

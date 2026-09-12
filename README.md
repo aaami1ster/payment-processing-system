@@ -30,7 +30,9 @@ POST /transactions → ProcessTransactionHandler
 
 Design docs: [`docs/`](docs/) · plan: [`docs/plan.md`](docs/plan.md) · HLD: [`docs/high-level-design.md`](docs/high-level-design.md) · LLD: [`docs/low-level-design.md`](docs/low-level-design.md).
 
-**Stack:** Java 21+, Spring Boot **4.1.1**, Maven, PostgreSQL 18, MongoDB 8, Liquibase, Testcontainers, JUnit 5, JaCoCo. Boot 4 is used only because Spring Framework High/Critical CVEs have no OSS 6.2.x fix on Maven Central (see `docs/plan.md`).
+**Stack (this branch):** Java 21+, Spring Boot **3.5.16**, Maven, PostgreSQL 18, MongoDB 8, Liquibase, Testcontainers, JUnit 5, JaCoCo.
+
+**Security posture:** Framework High/Critical CVEs that need **6.2.20+** are not fixable via Maven Central on Boot 3.x (commercial-only). This branch **virtually patches** CVE-2026-47884 / CVE-2026-59313 by non-use (`@RestController` only — no `XsltView`, no WebMvc.fn SSE) plus documented OWASP suppressions in `owasp-suppressions.xml`. Prefer Boot **4.1.x** on `develop`/`main` when an OSS Framework upgrade is acceptable (cleaner SCA report).
 
 ## Setup & Prerequisites
 

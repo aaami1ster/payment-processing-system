@@ -84,7 +84,7 @@ class GlobalExceptionHandlerTest {
         assertThat(typed.getBody().errors().get(0).field()).isEqualTo("id");
 
         ResponseEntity<ApiResponse<Void>> missing = handler.handleNoResource(
-                new NoResourceFoundException(org.springframework.http.HttpMethod.GET, "/api", "/nope"),
+                new NoResourceFoundException(org.springframework.http.HttpMethod.GET, "/api/nope"),
                 request);
         assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
 

@@ -6,6 +6,19 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `build: retarget boot 3.5 with virtual owasp patches`
+
+#### Changed
+
+- Retarget the stack to Spring Boot 3.5.16 with Boot 3 Mongo, Jackson, springdoc, and Testcontainers APIs
+- Bind Mongo via `spring.data.mongodb.uri` (prefer `SPRING_DATA_MONGODB_URI`) for Boot 3.x
+- Document the Boot 3 virtual-patch path versus preferred Boot 4.1.x on develop/main
+
+#### Security
+
+- Virtually patch CVE-2026-47884 / CVE-2026-59313 by non-use of XsltView and WebMvc.fn SSE, with OWASP suppressions
+- Pin Tomcat to a recent 10.1.x line compatible with Boot 3 / Servlet 6
+
 ### MR: `feat: add interactive challenge demo`
 
 #### Added
