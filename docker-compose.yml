@@ -52,7 +52,7 @@ services:
   # Optional query-side cache (Phase 8). Start with:
   #   docker compose --profile redis up --build -d
   redis:
-    profiles: ["redis"]
+#    profiles: ["redis"]
     image: redis:7-alpine
     container_name: payments-redis
     ports:

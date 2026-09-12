@@ -14,9 +14,8 @@ import org.junit.jupiter.api.Test;
 
 class HighRiskCategoryRuleTest {
 
-    private final HighRiskCategoryRule rule = new HighRiskCategoryRule(
-            EnumSet.of(Category.GAMBLING, Category.CRYPTO, Category.CASH_ADVANCE, Category.ADULT),
-            new BigDecimal("5000"));
+    private final HighRiskCategoryRule rule =
+            new HighRiskCategoryRule(EnumSet.of(Category.CRYPTO, Category.CASH_ADVANCE), new BigDecimal("5000"));
 
     @Test
     void declinesHighRiskCategoryAboveThreshold() {
@@ -29,14 +28,14 @@ class HighRiskCategoryRuleTest {
 
     @Test
     void allowsHighRiskCategoryAtThreshold() {
-        var result = rule.evaluate(context(matureUser(), "5000", Category.GAMBLING, 0, NOW));
+        var result = rule.evaluate(context(matureUser(), "5000", Category.CRYPTO, 0, NOW));
 
         assertThat(result).isEmpty();
     }
 
     @Test
     void allowsHighRiskCategoryBelowThreshold() {
-        var result = rule.evaluate(context(matureUser(), "4999.99", Category.ADULT, 0, NOW));
+        var result = rule.evaluate(context(matureUser(), "4999.99", Category.CASH_ADVANCE, 0, NOW));
 
         assertThat(result).isEmpty();
     }
@@ -50,8 +49,7 @@ class HighRiskCategoryRuleTest {
 
     @Test
     void declinesEachConfiguredHighRiskCategory() {
-        for (Category category : EnumSet.of(
-                Category.GAMBLING, Category.CRYPTO, Category.CASH_ADVANCE, Category.ADULT)) {
+        for (Category category : EnumSet.of(Category.CRYPTO, Category.CASH_ADVANCE)) {
             assertThat(rule.evaluate(context(matureUser(), "5000.01", category, 0, NOW)))
                     .as("category %s", category)
                     .isPresent();

@@ -7,10 +7,8 @@ public enum Category {
     GROCERIES,
     TRAVEL,
     ELECTRONICS,
-    GAMBLING,
     CRYPTO,
     CASH_ADVANCE,
     MONEY_TRANSFER,
-    ADULT,
     OTHER
 }

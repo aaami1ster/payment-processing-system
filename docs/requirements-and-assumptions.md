@@ -50,7 +50,7 @@ These are not specified in the brief; they are called out so behavior is determi
 | Velocity counting      | Count only `APPROVED` and `FLAGGED`. **Declined** attempts are **not** counted.                                                                       |
 | Velocity threshold     | Before processing: if `recentCount >= 3`, decline. The incoming request would be the 4th authorized transaction.                                      |
 | Rule composition       | All rules run. Any `DECLINE` wins over `FLAG`. Otherwise `FLAG` wins over `APPROVED`.                                                                 |
-| High-risk categories   | `GAMBLING`, `CRYPTO`, `CASH_ADVANCE`, `ADULT`. Extensible via config.                                                                                 |
+| High-risk categories   | `CRYPTO`, `CASH_ADVANCE`. Extensible via config.                                                                                                     |
 | KYC                    | Stored and included in audit context. **No** transaction decision is based on KYC — the challenge defines no KYC-specific fraud rule.                 |
 | Missing user           | Unknown `userId` is a client error (`404`), not a fraud decline.                                                                                      |
 | PostgreSQL unavailable | Return `503 Service Unavailable`. Do **not** approve and do **not** fabricate a fraud `DECLINED`. Infrastructure failure ≠ business decline.          |
