@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-outbox-webhook-destination
+      author: payment-processing-system
+      changes:
+        - dropUniqueConstraint:
+            tableName: audit_outbox
+            constraintName: audit_outbox_transaction_id_key
+        - addColumn:
+            tableName: audit_outbox
+            columns:
+              - column:
+                  name: destination
+                  type: TEXT
+                  defaultValue: AUDIT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_url
+                  type: TEXT
+              - column:
+                  name: signing_secret
+                  type: TEXT
+        - sql:
+            sql: |
+              ALTER TABLE audit_outbox
+                ADD CONSTRAINT chk_audit_outbox_destination
+                CHECK (destination IN ('AUDIT', 'WEBHOOK'));
+              ALTER TABLE audit_outbox
+                ADD CONSTRAINT chk_audit_outbox_webhook_delivery
+                CHECK (
+                  (destination = 'AUDIT' AND target_url IS NULL AND signing_secret IS NULL)
+                  OR (destination = 'WEBHOOK' AND target_url IS NOT NULL AND signing_secret IS NOT NULL)
+                );
+              CREATE UNIQUE INDEX uq_audit_outbox_audit_txn
+                ON audit_outbox (transaction_id)
+                WHERE destination = 'AUDIT';
+              CREATE UNIQUE INDEX uq_audit_outbox_webhook_txn_url
+                ON audit_outbox (transaction_id, target_url)
+                WHERE destination = 'WEBHOOK';

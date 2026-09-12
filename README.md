@@ -153,6 +153,7 @@ Notable suites:
 | `TransactionApiTest`, `UserApiTest` | HTTP + Postgres Testcontainers |
 | `ConcurrencyIT` | Rule 2 race (2 existing + 2 parallel) + concurrent idempotency |
 | `OutboxPublisherIT` | Mongo projection, outage/recovery, duplicate `_id` |
+| `WebhookOutboxIT` | Signed webhook delivery, 5xx retry, subscriber down |
 
 Docker is required for Testcontainers. Security scanners (phase gate):
 
@@ -185,6 +186,7 @@ Highlights from the [HLD](docs/high-level-design.md):
 | Rate limiting | In-process Bucket4j filter on `/api/v1/**` (user / merchant / IP) | Caps abuse before handlers; does **not** replace Rule 2 |
 | Redis user cache | Optional `user:{id}` read-through on `GetUserHandler` only | Faster GETs; invalidate on PATCH; **never** on authorize `FOR UPDATE` |
 | Bulk export | Cursor-paginated `GET /transactions?userId=` | Stable `created_at DESC, id DESC` pages; max limit 200; query-only |
+| Webhooks | Outbox `WEBHOOK` + HMAC `X-Signature` | Async after commit; authorize never waits on subscriber HTTP |
 | Validation | Bean Validation on DTOs **and** handler guards | Contract at the edge; invariants for non-HTTP callers |
 | Logging | SLF4J via `LogFactory` + Logback JSON + MDC | Never `System.out`; correlate via `requestId` |
 
@@ -214,6 +216,24 @@ curl -s "http://localhost:8080/api/v1/transactions?userId=$USER_ID&limit=2"
 ```
 
 `ListTransactionsHandler` is read-only (no locks/outbox). Filters: required `userId`; optional `from`/`to` (inclusive ISO-8601), `status`, `cursor`; `limit` default 50, max 200.
+
+**Optional webhooks (Phase 10):**
+
+```bash
+# In application.yml (or env):
+# payment.webhooks.enabled=true
+# payment.webhooks.subscribers[0].merchant-id=*
+# payment.webhooks.subscribers[0].target-url=https://hooks.example.com/payments
+# payment.webhooks.subscribers[0].secret=change-me
+# payment.webhooks.subscribers[0].events=TRANSACTION_APPROVED,TRANSACTION_FLAGGED,TRANSACTION_DECLINED
+
+docker compose up --build -d
+# POST /api/v1/transactions → 201 immediately
+# OutboxPublisher POSTs signed JSON (X-Signature: sha256=…) asynchronously
+# If the subscriber is down, payment still succeeds; WEBHOOK outbox stays PENDING and retries
+```
+
+Subscribers must treat delivery as at-least-once and dedupe on `transactionId` (+ `event`). Disabled by default (`payment.webhooks.enabled=false`).
 
 **Rate limit demo (burst → 429):**
 

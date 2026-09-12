@@ -1029,11 +1029,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T10.1 — Webhook outbox + client**  
+- [x] **T10.1 — Webhook outbox + client**  
   **Description:** Enqueue on commit; publisher branch WEBHOOK; HMAC signature header.  
   **Acceptance:** At-least-once; failures backoff; POST /transactions does not call webhook inline.
 
-- [ ] **T10.2 — Tests + README**  
+- [x] **T10.2 — Tests + README**  
   **Description:** Delivery success/retry; signature verified in test.  
   **Acceptance:** Documented subscription config.
 
@@ -1153,7 +1153,7 @@ Hard rules:
 - [x] Phase 7 — Rate limiting (optional)
 - [x] Phase 8 — Redis cache (optional)
 - [x] Phase 9 — Bulk export (optional)
-- [ ] Phase 10 — Webhooks (optional)
+- [x] Phase 10 — Webhooks (optional)
 - [ ] Phase 11 — Static analysis (optional)
 
 **First impressive demo:** end of **Phase 3**.  

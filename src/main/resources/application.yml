@@ -62,6 +62,23 @@ payment:
       enabled: ${PAYMENT_CACHE_USER_ENABLED:false}
       ttl-seconds: 60
       key-prefix: "user:"
+  webhooks:
+    # Optional signed HTTP notifications (Phase 10). Off by default — authorize path never waits on HTTP.
+    enabled: ${PAYMENT_WEBHOOKS_ENABLED:false}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 3000
+    subscribers: []
+    # Example:
+    # subscribers:
+    #   - id: ops-global
+    #     merchant-id: "*"
+    #     target-url: https://hooks.example.com/payments
+    #     secret: ${WEBHOOK_SECRET:change-me}
+    #     events:
+    #       - TRANSACTION_APPROVED
+    #       - TRANSACTION_FLAGGED
+    #       - TRANSACTION_DECLINED
+    #     active: true
 
 server:
   port: ${SERVER_PORT:8080}
