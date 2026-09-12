@@ -203,8 +203,69 @@ mvn -q -Dtest='OutboxPublisherIT' test
 ```bash
 cd bruno && npx @usebruno/cli run user --env Local
 cd bruno && npx @usebruno/cli run transaction --env Local
-# GET / list / audit requests may 404 until later phases — POST + idempotency + error cases are Phase 3
 ```
+
+## API polish & observability (Phase 5)
+
+### OpenAPI / Swagger UI
+
+Interactive docs (springdoc):
+
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- OpenAPI JSON: http://localhost:8080/v3/api-docs
+
+```bash
+open http://localhost:8080/swagger-ui.html
+# or: open http://localhost:8080/swagger-ui/index.html
+```
+
+### GET transaction
+
+```bash
+# After POST /api/v1/transactions (sets TXN_ID)
+curl -si "http://localhost:8080/api/v1/transactions/$TXN_ID"
+# 200 + envelope; unknown id → 404 NOT_FOUND
+```
+
+### Metrics (Actuator Prometheus)
+
+Scrape endpoint (already exposed):
+
+```bash
+curl -s http://localhost:8080/actuator/prometheus | grep -E 'payment_transactions_total|payment_processing_duration|outbox_pending'
+```
+
+| Metric (Micrometer name) | Prometheus-ish name | Purpose |
+| ------------------------ | ------------------- | ------- |
+| `payment.transactions.total{status}` | `payment_transactions_total` | Throughput by outcome |
+| `payment.processing.duration` | `payment_processing_duration_*` | Authorize latency |
+| `fraud.rule.triggered{rule}` | `fraud_rule_triggered_total` | Which rules fire |
+| `outbox.pending.count` | `outbox_pending_count` | Outbox backlog |
+| `outbox.oldest.pending.age` | `outbox_oldest_pending_age` | Oldest PENDING age (seconds) |
+| `outbox.publish.failures` | `outbox_publish_failures_total` | Publish errors |
+| `mongo.publish.duration` | `mongo_publish_duration_*` | Publisher latency |
+
+### Logging: Logback JSON + MDC
+
+Application code logs only through SLF4J via `LogFactory` (never `System.out`). Logback writes **JSON** lines to the console using Logstash encoder (`src/main/resources/logback-spring.xml`), so each event is a structured object (`@timestamp`, `message`, `logger_name`, `level`, …) that log aggregators can index.
+
+**MDC** (Mapped Diagnostic Context) is a per-request thread-local map of correlation fields. `RequestIdFilter` accepts or generates `X-Request-Id`, echoes it as a response header, puts it in MDC, and controllers put the same value in `meta.requestId`. Payment processing also sets `transactionId`, `userId`, `status`, `rulesTriggered`, and `durationMs` for the decision log line.
+
+| MDC key | Purpose |
+| ------- | ------- |
+| `requestId` | Correlate client response with server logs |
+| `transactionId` | Payment decision id |
+| `userId` | Paying user (when known) |
+| `status` | Business outcome (`APPROVED` / `FLAGGED` / `DECLINED`) |
+| `rulesTriggered` | Fraud rules that fired |
+| `durationMs` | Processing latency |
+
+```bash
+curl -si http://localhost:8080/api/v1/users/<userId> | grep -i x-request-id
+docker compose logs app --tail 100 | grep '<requestId>'
+```
+
+Do not log credentials, tokens, or full sensitive financial payloads.
 
 ## Local Maven build
 

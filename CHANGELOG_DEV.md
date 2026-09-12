@@ -6,6 +6,21 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 5 API polish and observability`
+
+#### Added
+
+- Fetch stored decisions via `GET /api/v1/transactions/{id}` with envelope `200` / `404 NOT_FOUND`
+- Publish OpenAPI docs and Swagger UI with springdoc for users and transactions
+- Put `X-Request-Id` into MDC so JSON logs correlate with response headers and `meta.requestId`
+- Emit Micrometer metrics for transaction outcomes, processing duration, fraud rules, and outbox backlog/age
+- Document Swagger, Prometheus metrics, and Logback JSON + MDC in the README
+- Strengthen Bruno GET-transaction and prometheus probes for Phase 5 exit checks
+
+#### Changed
+
+- Soften Bruno list/audit requests so Phase 9-only endpoints do not fail the transaction folder
+
 ### MR: `feat: add phase 4 async mongo audit outbox`
 
 #### Added

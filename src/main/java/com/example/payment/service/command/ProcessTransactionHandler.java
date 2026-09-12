@@ -22,6 +22,7 @@ import com.example.payment.domain.transaction.TransactionStatus;
 import com.example.payment.domain.user.User;
 import com.example.payment.service.mapper.TransactionMapper;
 import com.example.payment.service.mapper.UserMapper;
+import com.example.payment.service.metrics.PaymentMetrics;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -33,8 +34,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
+import org.slf4j.MDC;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -59,6 +62,7 @@ public class ProcessTransactionHandler {
     private final TransactionMapper transactionMapper;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final PaymentMetrics paymentMetrics;
 
     @Transactional
     public Transaction handle(
@@ -72,6 +76,7 @@ public class ProcessTransactionHandler {
         String normalizedMerchant = merchantId.trim();
         String normalizedKey = normalizeIdempotencyKey(idempotencyKey);
         String fingerprint = RequestFingerprint.sha256(userId, normalizedMerchant, amount, category);
+        long startedNanos = System.nanoTime();
 
         try {
             if (normalizedKey != null) {
@@ -114,12 +119,17 @@ public class ProcessTransactionHandler {
 
             persistTransactionAndOutbox(transaction, user, decision);
 
+            Duration duration = Duration.ofNanos(System.nanoTime() - startedNanos);
+            paymentMetrics.recordProcessed(
+                    transaction.getStatus(), duration, transaction.getRulesTriggered());
+            putProcessingMdc(transaction, duration);
             log.info(
-                    "transaction.processed status={} transactionId={} userId={} rulesTriggered={}",
+                    "transaction.processed status={} transactionId={} userId={} rulesTriggered={} durationMs={}",
                     transaction.getStatus(),
                     transaction.getId(),
                     userId,
-                    transaction.getRulesTriggered());
+                    transaction.getRulesTriggered(),
+                    duration.toMillis());
             return transaction;
         } catch (UserNotFoundException | IdempotencyConflictException | InvalidRequestException ex) {
             throw ex;
@@ -133,7 +143,27 @@ public class ProcessTransactionHandler {
             throw new ServiceUnavailableException("Unable to persist transaction", ex);
         } catch (DataAccessException ex) {
             throw new ServiceUnavailableException("Unable to persist transaction", ex);
+        } finally {
+            clearProcessingMdc();
         }
+    }
+
+    private static void putProcessingMdc(Transaction transaction, Duration duration) {
+        MDC.put("transactionId", transaction.getId().toString());
+        MDC.put("userId", transaction.getUserId().toString());
+        MDC.put("status", transaction.getStatus().name());
+        MDC.put(
+                "rulesTriggered",
+                transaction.getRulesTriggered().stream().map(Enum::name).collect(Collectors.joining(",")));
+        MDC.put("durationMs", Long.toString(duration.toMillis()));
+    }
+
+    private static void clearProcessingMdc() {
+        MDC.remove("transactionId");
+        MDC.remove("userId");
+        MDC.remove("status");
+        MDC.remove("rulesTriggered");
+        MDC.remove("durationMs");
     }
 
     private void persistTransactionAndOutbox(Transaction transaction, User user, FraudDecision decision) {

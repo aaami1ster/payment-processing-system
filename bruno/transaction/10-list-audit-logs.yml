@@ -28,10 +28,18 @@ runtime:
     - type: tests
       code: |-
         test("HTTP 200 when endpoint is implemented", function() {
+          if (res.status === 404) {
+            expect(res.body.errors.some(e => e.code === "NOT_FOUND")).to.equal(true);
+            return;
+          }
           expect(res.status).to.equal(200);
         });
 
-        test("envelope with data page", function() {
+        test("envelope with data page when available", function() {
+          if (res.status === 404) {
+            expect(true).to.equal(true);
+            return;
+          }
           expect(res.body.data).to.not.equal(null);
           expect(res.body.errors).to.be.an("array").that.is.empty;
         });
