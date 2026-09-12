@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.example.payment.common.exception.UserNotFoundException;
 import com.example.payment.data.postgres.entity.UserEntity;
 import com.example.payment.data.postgres.repository.UserJpaRepository;
+import com.example.payment.data.redis.NoOpUserQueryCache;
 import com.example.payment.domain.user.KycStatus;
 import com.example.payment.domain.user.User;
 import com.example.payment.service.mapper.UserMapper;
@@ -36,7 +37,7 @@ class UpdateUserHandlerTest {
     @BeforeEach
     void setUp() {
         handler = new UpdateUserHandler(
-                userRepository, new UserMapper(), Clock.fixed(updated, ZoneOffset.UTC));
+                userRepository, new UserMapper(), Clock.fixed(updated, ZoneOffset.UTC), new NoOpUserQueryCache());
     }
 
     @Test

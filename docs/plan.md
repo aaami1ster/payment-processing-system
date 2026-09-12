@@ -945,11 +945,11 @@ Also run: ./scripts/check-security-docker-scout.sh and ./scripts/check-security-
 
 ### Tasks
 
-- [ ] **T8.1 — Redis cache on GetUserHandler**  
+- [x] **T8.1 — Redis cache on GetUserHandler**  
   **Description:** Read-through + TTL; UpdateUserHandler deletes key.  
   **Acceptance:** ProcessTransactionHandler never reads Redis for user.
 
-- [ ] **T8.2 — Resilience + tests + README**  
+- [x] **T8.2 — Resilience + tests + README**  
   **Description:** Redis down → PG fallback; document optional compose service.  
   **Acceptance:** Core tests pass without Redis; cache tests use Testcontainers Redis or similar.
 
@@ -1151,7 +1151,7 @@ Hard rules:
 - [x] Phase 5 — API polish & observability
 - [x] Phase 6 — Hardening & submission README
 - [x] Phase 7 — Rate limiting (optional)
-- [ ] Phase 8 — Redis cache (optional)
+- [x] Phase 8 — Redis cache (optional)
 - [ ] Phase 9 — Bulk export (optional)
 - [ ] Phase 10 — Webhooks (optional)
 - [ ] Phase 11 — Static analysis (optional)
