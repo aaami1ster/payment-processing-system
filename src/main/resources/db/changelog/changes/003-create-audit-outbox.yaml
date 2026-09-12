@@ -1,0 +1,60 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-audit-outbox
+      author: payment-processing-system
+      changes:
+        - createTable:
+            tableName: audit_outbox
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: transaction_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: payload
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempts
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_error
+                  type: TEXT
+              - column:
+                  name: next_attempt_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+        - sql:
+            sql: ALTER TABLE audit_outbox ADD CONSTRAINT chk_audit_outbox_status CHECK (status IN ('PENDING', 'PUBLISHED'))
+        - createIndex:
+            indexName: idx_audit_outbox_pending
+            tableName: audit_outbox
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: next_attempt_at

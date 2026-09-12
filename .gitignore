@@ -75,9 +75,10 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# Test / local data
-*.db
-*.sqlite
-data/
+# Test / local data (repo-root only — do not ignore src/.../data packages)
+/data/
 tmp/
 temp/
+
+# Local tooling (Maven tarball extract)
+.tools/

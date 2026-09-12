@@ -120,6 +120,7 @@ com.example.payment
 │   │   └── UpdateUserHandler.java
 │   ├── query
 │   │   ├── GetUserHandler.java
+│   │   ├── ListUsersHandler.java
 │   │   └── GetTransactionHandler.java
 │   └── mapper
 │
@@ -180,9 +181,9 @@ Optional later packages (not required for MVP): `api.filter` (rate limiting), `d
 
 | Package | Answers | Contains |
 | ------- | ------- | -------- |
-| `api` | How do clients talk to us? | Controllers, request DTOs, standard `ApiResponse` envelope, `GlobalExceptionHandler` |
-| `service.command` | How do we mutate state for a use case? | Write handlers: locks, domain calls, persistence, outbox |
-| `service.query` | How do we read state for a use case? | Read-only handlers: no locks, no side effects |
+| `api` | How do clients talk to us? | Controllers, request DTOs (**Bean Validation**), standard `ApiResponse` envelope, `GlobalExceptionHandler` |
+| `service.command` | How do we mutate state for a use case? | Write handlers: business validation, locks, domain calls, persistence, outbox |
+| `service.query` | How do we read state for a use case? | Read-only handlers: no locks, no side effects; still guard invalid ids |
 | `domain` | What are the business concepts and rules? | Models, enums, fraud engine and rules |
 | `data` | How do we store and retrieve state? | Postgres/Mongo entities, repositories, outbox |
 | `integration` | How do we talk to systems we don’t own? | External clients (webhooks, etc.) when needed |
@@ -201,6 +202,7 @@ User profile **writes** are rare; **reads** happen on every payment and on `GET 
 | ---- | ------- | ---- |
 | `POST /api/v1/transactions` | `ProcessTransactionHandler` | Command |
 | `POST /api/v1/users` | `CreateUserHandler` | Command |
+| `GET /api/v1/users` | `ListUsersHandler` | Query |
 | `PATCH /api/v1/users/{id}` | `UpdateUserHandler` | Command |
 | `GET /api/v1/users/{id}` | `GetUserHandler` | Query |
 | `GET /api/v1/transactions/{id}` | `GetTransactionHandler` | Query |
@@ -387,7 +389,7 @@ sequenceDiagram
 
 ### Processing steps (happy path)
 
-1. Validate payload (amount > 0, required IDs, known category).
+1. Validate payload at the API edge (Bean Validation on request DTOs) and re-check business guards in the command handler (amount > 0, required IDs, known category).
 2. If an idempotency key is present, look up by `(userId, key)`. Matching fingerprint → return stored result. Different fingerprint → `409`.
 3. `BEGIN` a PostgreSQL transaction.
 4. `SELECT * FROM users WHERE id = :userId FOR UPDATE` — serialization point for that user.
@@ -483,7 +485,17 @@ The client is not blocked on Mongo. Audit intent cannot disappear on restart bec
 
 **Authorize path stays strongly consistent:** `ProcessTransactionHandler` loads the user with `SELECT … FOR UPDATE` on the primary inside its transaction. It does **not** call `GetUserHandler` or a cache. Optional caching applies only to query handlers (`GetUserHandler`), with invalidation on `UpdateUserHandler`.
 
+### Request validation (DTO + handler)
 
+**Choice:** Layered validation — Jakarta Bean Validation on API request DTOs **and** business guards in CQRS-lite handlers.
+
+| Approach | Pros | Cons |
+| -------- | ---- | ---- |
+| DTO-only | Fast HTTP 400 with field paths; matches REST contract | Bypassed if handlers are called outside HTTP |
+| Handler-only | Protects all entry points | Weak HTTP field mapping; inconsistent envelopes |
+| **Both (chosen)** | Contract at the edge; invariants in the use case | Must not duplicate the *same* rule in both layers |
+
+**Rule of thumb:** formats and presence → DTO annotations + `@Valid`. Uniqueness, not-found, and domain invariants → handlers (mapped by `GlobalExceptionHandler` to the `ApiResponse` envelope). Details: LLD *Request validation (layered)*.
 
 ### Audit: sync vs async
 
@@ -591,8 +603,8 @@ flowchart LR
 flowchart LR
     subgraph Compose["docker-compose (MVP)"]
         App["payment-service :8080"]
-        PG["postgres :5432"]
-        MG["mongo :27017"]
+        PG["postgres:18-alpine :5432"]
+        MG["mongo:8 :27017"]
     end
     RedisOpt[("Redis<br/>optional")]
     App --> PG
@@ -602,7 +614,8 @@ flowchart LR
 
 
 
-- One `docker-compose.yml`: app, PostgreSQL, MongoDB.
+- One `docker-compose.yml`: app, **PostgreSQL 18**, **MongoDB 8**.
+- Postgres volume mounts `/var/lib/postgresql` (PG 18+ image layout). Major-version bumps need a fresh volume (`docker compose down -v`) or a proper `pg_upgrade` / dump-restore.
 - App waits for PG via healthchecks, then **Liquibase** migrations, then starts.
 - Outbox publisher is a `@Scheduled` worker **inside** the app (safe across instances via `SKIP LOCKED`).
 - Optional Redis (query cache / shared rate-limit buckets) is a later compose service — not required for MVP.

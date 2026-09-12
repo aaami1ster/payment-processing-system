@@ -1,0 +1,93 @@
+spring:
+  application:
+    name: payment-processing-system
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/payments}
+    username: ${SPRING_DATASOURCE_USERNAME:payments}
+    password: ${SPRING_DATASOURCE_PASSWORD:payments}
+    hikari:
+      connection-timeout: 2000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Schema owned by Liquibase (entities arrive in later phases)
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  mongodb:
+    uri: ${SPRING_MONGODB_URI:${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/payments_audit?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000&socketTimeoutMS=2000}}
+
+  data:
+    mongodb:
+      # Do not create indexes during MongoTemplate construction — that would block startup if Mongo is down
+      auto-index-creation: false
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+payment:
+  outbox:
+    publisher:
+      enabled: true
+      batch-size: 50
+      poll-interval-ms: 1000
+      mongo-timeout-ms: 2000
+      circuit-failure-rate-threshold: 50
+      circuit-sliding-window-size: 10
+      circuit-wait-open-ms: 10000
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    # Mongo is optional for readiness — payments stay available if audit projection lags
+    mongo:
+      enabled: false
+    group:
+      liveness:
+        include: livenessState
+      readiness:
+        include: readinessState,db
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+fraud:
+  high-risk-categories:
+    - GAMBLING
+    - CRYPTO
+    - CASH_ADVANCE
+    - ADULT
+  amount-without-approval-threshold: 10000
+  high-risk-amount-threshold: 5000
+  new-user-amount-threshold: 5000
+  velocity-threshold: 3
+  velocity-window-seconds: 60
+  new-user-max-age-days: 30
+
+logging:
+  level:
+    root: INFO
+    com.example.payment: INFO

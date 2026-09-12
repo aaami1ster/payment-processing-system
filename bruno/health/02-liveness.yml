@@ -1,0 +1,40 @@
+info:
+  name: Liveness
+  type: http
+  seq: 2
+
+http:
+  method: GET
+  url: "{{baseUrl}}/actuator/health/liveness"
+
+runtime:
+  scripts:
+    - type: tests
+      code: |-
+        test("HTTP 200", function() {
+          expect(res.status).to.equal(200);
+        });
+
+        test("liveness UP", function() {
+          expect(res.body.status).to.equal("UP");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: |-
+  # GET /actuator/health/liveness
+
+  Process-level liveness probe (Kubernetes-style).
+
+  ## When available
+  Phase 0+
+
+  ## Success
+  - **HTTP** `200`, `"status": "UP"` while the JVM process is alive
+
+  ## Failure
+  - Non-200 when the process should be restarted

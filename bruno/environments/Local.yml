@@ -1,0 +1,20 @@
+name: Local
+variables:
+  - name: baseUrl
+    value: http://localhost:8080
+  - name: userId
+    value: ""
+  - name: transactionId
+    value: ""
+  - name: idempotencyKey
+    value: ""
+  - name: merchantId
+    value: mch_bruno_demo
+  - name: sampleEmail
+    value: ""
+  - name: usersNextCursor
+    value: ""
+  - name: declineUserId
+    value: ""
+  - name: idempotencyKeyDecline
+    value: ""

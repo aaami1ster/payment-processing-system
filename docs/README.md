@@ -20,12 +20,20 @@ Persistence unavailable → no business decision acknowledged → 503 Service Un
 | Document | Contents |
 | -------- | -------- |
 | [requirements-and-assumptions.md](requirements-and-assumptions.md) | Goals, constraints, explicit assumptions, optional enhancements, out-of-scope choices |
-| [high-level-design.md](high-level-design.md) | Architecture, packages / CQRS-lite, request flow, design decisions, resilience, deployment |
-| [low-level-design.md](low-level-design.md) | Fraud engine & Rule 2, domain & data models, API envelope, concurrency, observability, testing, implementation sequence |
+| [high-level-design.md](high-level-design.md) | Architecture, packages / CQRS-lite, request validation (DTO + handler), request flow, design decisions, resilience, deployment |
+| [low-level-design.md](low-level-design.md) | Fraud engine & Rule 2, domain & data models, API envelope, layered validation, concurrency, observability, testing, implementation sequence |
 
 ## Challenge brief
 
 The original challenge statement is in [Payment_Processing_Code_Challenge.md](Payment_Processing_Code_Challenge.md).
+
+## Implementation plan
+
+Phased build order, deliverables, checkboxes, and copy-paste AI prompts: [../plan.md](../plan.md).
+
+## API testing (Bruno)
+
+Runnable HTTP collection (docs + tests per endpoint): [../bruno/README.md](../bruno/README.md).
 
 ## Project identity
 
