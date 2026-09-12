@@ -29,7 +29,12 @@ DEMO_USER_ID=""
 DEMO_USER_EMAIL=""
 LAST_TXN_ID=""
 LAST_IDEMPOTENCY_KEY=""
-CURSOR_INDEX=0   # for "next" — 0-based into FEATURE_IDS
+CURSOR_INDEX=0   # for "next" — 0-based into FEATURES
+ACTIVE_FEATURE_INDEX=-1
+DEMO_STEP_OUTCOME=""  # pass | fail | skip (set by helpers during a step)
+
+# Per-feature status: pending | pass | fail | skip  (parallel to FEATURES)
+FEATURE_STATUS=()
 
 # ---------------------------------------------------------------------------
 # Terminal helpers
@@ -56,8 +61,16 @@ need() {
 
 hr() { printf '%s\n' "${C_DIM}────────────────────────────────────────────────────────────${C_RESET}"; }
 
+clear_screen() {
+  # One clean frame per feature — avoid scrolling noise during a live demo.
+  # Skip when stdout is not a TTY (piped / CI) so logs stay intact.
+  if [[ -t 1 ]]; then
+    clear 2>/dev/null || printf '\033c'
+  fi
+}
+
 banner() {
-  clear 2>/dev/null || true
+  clear_screen
   echo
   echo "${C_BOLD}${C_CYAN}Payment Processing System — Interactive Demo${C_RESET}"
   echo "${C_DIM}Challenge features + optional enhancements, step by step.${C_RESET}"
@@ -112,11 +125,13 @@ show_response() {
 }
 
 pass() {
+  DEMO_STEP_OUTCOME="pass"
   echo
   echo "${C_GREEN}${C_BOLD}Result: PASS${C_RESET} — $1"
 }
 
 fail() {
+  DEMO_STEP_OUTCOME="fail"
   echo
   echo "${C_RED}${C_BOLD}Result: FAIL${C_RESET} — $1"
   return 1
@@ -130,6 +145,7 @@ confirm_or_abort() {
   echo
   read -r -p "${C_DIM}Press Enter to continue (or type skip to abort this step)… ${C_RESET}" ans || true
   if [[ "${ans}" == "skip" ]]; then
+    DEMO_STEP_OUTCOME="skip"
     info "Skipped."
     return 1
   fi
@@ -267,6 +283,14 @@ FEATURES=(
 
 feature_count() { echo "${#FEATURES[@]}"; }
 
+init_feature_status() {
+  FEATURE_STATUS=()
+  local i
+  for i in $(seq 0 $(( ${#FEATURES[@]} - 1 ))); do
+    FEATURE_STATUS+=("pending")
+  done
+}
+
 feature_field() {
   # feature_field INDEX field  → field in {id,name,title}
   local idx="$1" field="$2"
@@ -278,18 +302,60 @@ feature_field() {
   esac
 }
 
+status_badge() {
+  # Prints a short colored marker for a feature status.
+  local st="${1:-pending}" active="${2:-0}"
+  if [[ "${active}" == "1" ]]; then
+    printf '%s' "${C_CYAN}[▶]${C_RESET}"
+    return
+  fi
+  case "${st}" in
+    pass) printf '%s' "${C_GREEN}[✓]${C_RESET}" ;;
+    fail) printf '%s' "${C_RED}[✗]${C_RESET}" ;;
+    skip) printf '%s' "${C_YELLOW}[–]${C_RESET}" ;;
+    *)    printf '%s' "${C_DIM}[ ]${C_RESET}" ;;
+  esac
+}
+
+progress_summary() {
+  local i st
+  local n_pass=0 n_fail=0 n_skip=0 n_pend=0
+  for i in $(seq 0 $(( ${#FEATURES[@]} - 1 ))); do
+    st="${FEATURE_STATUS[$i]:-pending}"
+    case "${st}" in
+      pass) n_pass=$((n_pass + 1)) ;;
+      fail) n_fail=$((n_fail + 1)) ;;
+      skip) n_skip=$((n_skip + 1)) ;;
+      *)    n_pend=$((n_pend + 1)) ;;
+    esac
+  done
+  printf '%s' "${C_DIM}Progress: ${C_GREEN}${n_pass} pass${C_DIM} · ${C_RED}${n_fail} fail${C_DIM} · ${C_YELLOW}${n_skip} skip${C_DIM} · ${n_pend} pending${C_RESET}"
+}
+
 print_menu() {
   echo
-  echo "${C_BOLD}Features${C_RESET}  ${C_DIM}(type number, name, or next)${C_RESET}"
+  echo -n "${C_BOLD}Features${C_RESET}  ${C_DIM}(number / name / next)${C_RESET}   "
+  progress_summary
+  echo
   hr
-  local i id name title
+  local i id name title st active
   for i in $(seq 0 $(( ${#FEATURES[@]} - 1 ))); do
     id=$(feature_field "$i" id)
     name=$(feature_field "$i" name)
     title=$(feature_field "$i" title)
-    printf "  ${C_BOLD}%2s${C_RESET}:${C_CYAN}%-14s${C_RESET} %s\n" "${id}" "${name}" "${title}"
+    st="${FEATURE_STATUS[$i]:-pending}"
+    active=0
+    [[ "${i}" -eq "${ACTIVE_FEATURE_INDEX}" ]] && active=1
+    if [[ "${active}" -eq 1 ]]; then
+      printf "  %s ${C_BOLD}%2s${C_RESET}:${C_CYAN}%-14s${C_RESET} ${C_BOLD}%s${C_RESET}\n" \
+        "$(status_badge "${st}" 1)" "${id}" "${name}" "${title}"
+    else
+      printf "  %s %2s:%-14s %s\n" \
+        "$(status_badge "${st}" 0)" "${id}" "${name}" "${title}"
+    fi
   done
   hr
+  echo "  ${C_DIM}Legend: [ ] pending  [▶] current  [✓] pass  [✗] fail  [–] skipped${C_RESET}"
   echo "  ${C_DIM}Commands: next | list | status | prep | quit${C_RESET}"
   echo
 }
@@ -302,6 +368,9 @@ print_status() {
   echo "  lastTxnId:     ${LAST_TXN_ID:-<none>}"
   echo "  lastIdemKey:   ${LAST_IDEMPOTENCY_KEY:-<none>}"
   echo "  next index:    $(( CURSOR_INDEX + 1 )) / $(feature_count)  ($(feature_field "${CURSOR_INDEX}" name 2>/dev/null || echo done))"
+  echo -n "  "
+  progress_summary
+  echo
   echo
 }
 
@@ -1212,6 +1281,15 @@ run_feature_by_index() {
   local id name
   id=$(feature_field "$idx" id)
   name=$(feature_field "$idx" name)
+
+  DEMO_STEP_OUTCOME=""
+  ACTIVE_FEATURE_INDEX="${idx}"
+
+  # Fresh screen: menu always on top so you can track progress and pick the next step.
+  clear_screen
+  print_menu
+
+  set +e
   case "${name}" in
     health)        run_health ;;
     users)         run_users ;;
@@ -1230,8 +1308,28 @@ run_feature_by_index() {
     errors)        run_errors ;;
     redis)         run_redis ;;
     webhooks)      run_webhooks ;;
-    *)             fail "Unknown feature ${name}"; return 1 ;;
+    *)             fail "Unknown feature ${name}"; ;;
   esac
+  local rc=$?
+  set -e
+
+  case "${DEMO_STEP_OUTCOME}" in
+    pass|fail|skip) FEATURE_STATUS[$idx]="${DEMO_STEP_OUTCOME}" ;;
+    *)
+      if [[ "${rc}" -eq 0 ]]; then
+        FEATURE_STATUS[$idx]="pass"
+      else
+        FEATURE_STATUS[$idx]="fail"
+      fi
+      ;;
+  esac
+  ACTIVE_FEATURE_INDEX=-1
+
+  echo
+  echo -n "  "
+  progress_summary
+  echo
+  return "${rc}"
 }
 
 # ---------------------------------------------------------------------------
@@ -1243,8 +1341,10 @@ main() {
   need jq
   need docker
 
+  init_feature_status
   banner
   wait_ready
+  clear_screen
   print_menu
 
   echo "${C_DIM}Tip: start with 1→7 for the challenge core, then optional 8–17.${C_RESET}"
@@ -1270,12 +1370,17 @@ main() {
         break
         ;;
       list|menu|help|h|\?)
+        clear_screen
         print_menu
         ;;
       status)
+        clear_screen
+        print_menu
         print_status
         ;;
       prep)
+        clear_screen
+        print_menu
         print_prep
         ;;
       next)
