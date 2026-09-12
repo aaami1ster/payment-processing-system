@@ -17,7 +17,7 @@
 
     <groupId>com.example</groupId>
     <artifactId>payment-processing-system</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
     <name>payment-processing-system</name>
     <description>Payment processing system with fraud detection</description>
 

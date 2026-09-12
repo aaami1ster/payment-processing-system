@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-13
+
+MR title: `chore(release): 1.3.0`
+
+### Changed
+
+- Retarget the stack to Spring Boot 3.5.16 with Boot 3 Mongo, Jackson, springdoc, and Testcontainers APIs
+- Bind Mongo via `spring.data.mongodb.uri` (prefer `SPRING_DATA_MONGODB_URI`) for Boot 3.x
+- Document the Boot 3 virtual-patch path versus preferred Boot 4.1.x on develop/main
+- Drop obsolete PMD exclusions now that the Boot 3 codebase no longer needs them
+
+### Security
+
+- Virtually patch Spring Framework High/Critical CVEs with no OSS 6.2.20+ fix via non-use (MVC JSON only) and OWASP suppressions
+- Upgrade Tomcat, Netty, Jackson, PostgreSQL JDBC, springdoc/swagger-ui, and related pins to clear other High/Critical findings
+- Suppress the Log4j1XmlLayout false positive when only log4j-api is on the classpath via Logback
+
 ## [1.2.0] - 2026-09-13
 
 MR title: `chore(release): 1.2.0`
@@ -120,6 +137,7 @@ MR title: `chore(release): 1.0.0`
 - Suppress known OWASP CPE false positives and drop unfixed GNU wget from the app image
 
 [unreleased]: https://github.com/aaami1ster/payment-processing-system/compare/main...HEAD
+[1.3.0]: https://github.com/aaami1ster/payment-processing-system/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/aaami1ster/payment-processing-system/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/aaami1ster/payment-processing-system/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/aaami1ster/payment-processing-system/releases/tag/v1.0.0
