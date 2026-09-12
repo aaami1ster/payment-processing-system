@@ -902,11 +902,11 @@ After Phase 6, you should be able to check the challenge deliverables:
 
 ### Tasks
 
-- [ ] **T7.1 — Rate limit filter + config**  
+- [x] **T7.1 — Rate limit filter + config**  
   **Description:** Key by userId and/or merchantId; configurable windows.  
   **Acceptance:** Over-limit never inserts transaction/outbox.
 
-- [ ] **T7.2 — 429 envelope + tests + README**  
+- [x] **T7.2 — 429 envelope + tests + README**  
   **Description:** Match LLD optional contract; optional `Retry-After`.  
   **Acceptance:** Tests prove 429 vs Rule 2 independence.
 
@@ -1150,7 +1150,7 @@ Hard rules:
 - [x] Phase 4 — Mongo audit publisher
 - [x] Phase 5 — API polish & observability
 - [x] Phase 6 — Hardening & submission README
-- [ ] Phase 7 — Rate limiting (optional)
+- [x] Phase 7 — Rate limiting (optional)
 - [ ] Phase 8 — Redis cache (optional)
 - [ ] Phase 9 — Bulk export (optional)
 - [ ] Phase 10 — Webhooks (optional)

@@ -104,6 +104,7 @@ All responses use the `ApiResponse` envelope (`data`, `message`, `errors[]`, `me
 | Same key, different payload | `409` | `IDEMPOTENCY_CONFLICT` |
 | Invalid body | `400` | `VALIDATION_ERROR` |
 | PostgreSQL failure | `503` | `SERVICE_UNAVAILABLE` |
+| Rate limit exceeded | `429` | `RATE_LIMIT_EXCEEDED` (+ optional `Retry-After`) |
 
 ### Fraud rules
 
@@ -180,10 +181,13 @@ Highlights from the [HLD](docs/high-level-design.md):
 | Audit | Transactional outbox → async Mongo | Decision durable in PG; client never waits on Mongo |
 | Why Mongo at all? | Separate audit projection | Demonstrates heterogeneous-store resilience; PG remains SoR |
 | Idempotency | Optional key + SHA-256 fingerprint + partial unique index | Safe retries; `409` on fingerprint conflict |
+| Rate limiting | In-process Bucket4j filter on `/api/v1/**` (user / merchant / IP) | Caps abuse before handlers; does **not** replace Rule 2 |
 | Validation | Bean Validation on DTOs **and** handler guards | Contract at the edge; invariants for non-HTTP callers |
 | Logging | SLF4J via `LogFactory` + Logback JSON + MDC | Never `System.out`; correlate via `requestId` |
 
 **Authorize path:** load user with `FOR UPDATE` inside `ProcessTransactionHandler` — not via `GetUserHandler`.
+
+**Rate limit demo (burst → 429):** with defaults (`user` = 60/min), temporarily lower limits or loop `POST /transactions` for one `userId` until HTTP `429` with `RATE_LIMIT_EXCEEDED`. Over-limit requests never insert `transactions` or `audit_outbox`. Config: `payment.rate-limit.*` in `application.yml` (set `enabled: false` to disable).
 
 ## Domain UML
 

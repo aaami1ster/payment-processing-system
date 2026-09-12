@@ -40,6 +40,17 @@ payment:
       circuit-failure-rate-threshold: 50
       circuit-sliding-window-size: 10
       circuit-wait-open-ms: 10000
+  rate-limit:
+    enabled: true
+    user:
+      capacity: 60
+      window-seconds: 60
+    merchant:
+      capacity: 300
+      window-seconds: 60
+    ip:
+      capacity: 120
+      window-seconds: 60
 
 server:
   port: ${SERVER_PORT:8080}
