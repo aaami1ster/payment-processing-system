@@ -6,6 +6,19 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `feat: add phase 7 HTTP rate limiting`
+
+#### Added
+
+- Cap `/api/v1/**` traffic with an in-process Bucket4j filter keyed by userId, merchantId, and IP
+- Return `429 RATE_LIMIT_EXCEEDED` with the ApiResponse envelope and optional `Retry-After`
+- Cover over-limit (no DB writes) and Rule 2 independence with Testcontainers
+- Document rate-limit defaults, config (`payment.rate-limit.*`), and burst demo in the README
+
+#### Changed
+
+- Mark Phase 7 plan tasks T7.1–T7.2 done
+
 ### MR: `feat: harden phase 6 coverage and submission delivery`
 
 #### Added
