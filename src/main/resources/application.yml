@@ -64,11 +64,18 @@ payment:
       key-prefix: "user:"
   webhooks:
     # Optional signed HTTP notifications (Phase 10). Off by default — authorize path never waits on HTTP.
+    # Demo steps: README "Webhook demo (local Compose → host listener)".
     enabled: ${PAYMENT_WEBHOOKS_ENABLED:false}
     connect-timeout-ms: 2000
     read-timeout-ms: 3000
-    subscribers: []
-    # Example:
+    # Local demo subscriber (host listener on :9999). Override/clear for non-demo environments.
+    subscribers:
+      - id: local
+        merchant-id: "*"
+        target-url: http://host.docker.internal:9999/hooks
+        secret: change-me
+        active: true
+    # Production-style example:
     # subscribers:
     #   - id: ops-global
     #     merchant-id: "*"

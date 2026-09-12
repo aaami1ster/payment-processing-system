@@ -219,21 +219,89 @@ curl -s "http://localhost:8080/api/v1/transactions?userId=$USER_ID&limit=2"
 
 **Optional webhooks (Phase 10):**
 
-```bash
-# In application.yml (or env):
-# payment.webhooks.enabled=true
-# payment.webhooks.subscribers[0].merchant-id=*
-# payment.webhooks.subscribers[0].target-url=https://hooks.example.com/payments
-# payment.webhooks.subscribers[0].secret=change-me
-# payment.webhooks.subscribers[0].events=TRANSACTION_APPROVED,TRANSACTION_FLAGGED,TRANSACTION_DECLINED
+Disabled by default (`PAYMENT_WEBHOOKS_ENABLED=false`). When enabled, each payment commit also enqueues a `WEBHOOK` outbox row; `OutboxPublisher` POSTs signed JSON asynchronously (`X-Signature: sha256=…`). Authorize never waits on the subscriber. Subscribers must treat delivery as **at-least-once** and dedupe on `transactionId` (+ `event`).
 
-docker compose up --build -d
-# POST /api/v1/transactions → 201 immediately
-# OutboxPublisher POSTs signed JSON (X-Signature: sha256=…) asynchronously
-# If the subscriber is down, payment still succeeds; WEBHOOK outbox stays PENDING and retries
+### Webhook demo (local Compose → host listener)
+
+**1. Start a fake subscriber on the host** (bind `0.0.0.0`, port `9999`):
+
+```bash
+python3 - <<'PY'
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(n)
+        print("X-Signature:", self.headers.get("X-Signature"))
+        print("X-Request-Id:", self.headers.get("X-Request-Id"))
+        print(body.decode())
+        self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+    def log_message(self, *a): pass
+HTTPServer(("0.0.0.0", 9999), H).serve_forever()
+PY
 ```
 
-Subscribers must treat delivery as at-least-once and dedupe on `transactionId` (+ `event`). Disabled by default (`payment.webhooks.enabled=false`).
+Confirm it is listening: `lsof -nP -iTCP:9999 -sTCP:LISTEN`
+
+**2. Point the app at that listener** — sample subscriber in `application.yml`:
+
+```yaml
+payment:
+  webhooks:
+    enabled: true   # or PAYMENT_WEBHOOKS_ENABLED=true
+    subscribers:
+      - id: local
+        merchant-id: "*"
+        target-url: http://host.docker.internal:9999/hooks
+        secret: change-me
+        active: true
+```
+
+Use `host.docker.internal` (not `localhost`) so the **container** reaches the host. Compose maps that name via `extra_hosts: host.docker.internal:host-gateway`.
+
+**3. Bring the stack up with webhooks on:**
+
+```bash
+# .env
+PAYMENT_WEBHOOKS_ENABLED=true
+
+docker compose up --build -d
+# Optional reachability check from the app container:
+docker compose exec app wget -S -qO- --timeout=3 http://host.docker.internal:9999/hooks || echo FAIL
+```
+
+**4. Happy path — signed delivery without slowing authorize:**
+
+```bash
+USER_ID=$(curl -s -X POST http://localhost:8080/api/v1/users \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"wh-demo@example.com"}' | jq -r '.data.id')
+
+time curl -s -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -d "{\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"amount\":100.00,\"category\":\"GROCERIES\"}"
+```
+
+Expect HTTP **201** in tens of ms; the Python terminal prints body + `X-Signature: sha256=…`; outbox rows go `PUBLISHED`:
+
+```bash
+docker compose exec postgres psql -U payments -d payments -c \
+  "SELECT destination, status, attempts FROM audit_outbox ORDER BY id DESC LIMIT 5;"
+```
+
+**5. Subscriber down — payment still 201, WEBHOOK retries:**
+
+Stop the Python process (Ctrl+C), POST another transaction (still **201**), then:
+
+```bash
+docker compose exec postgres psql -U payments -d payments -c \
+  "SELECT destination, status, attempts, left(last_error,80) AS err, next_attempt_at
+   FROM audit_outbox WHERE destination='WEBHOOK' ORDER BY id DESC LIMIT 3;"
+```
+
+Expect `AUDIT` **PUBLISHED**, `WEBHOOK` **PENDING** with rising `attempts`. Restart the listener (and optionally `UPDATE audit_outbox SET next_attempt_at = now() WHERE destination='WEBHOOK' AND status='PENDING';`) — delivery resumes and the row becomes **PUBLISHED**.
+
+Automated coverage: `mvn -Dtest=WebhookOutboxIT,WebhookClientTest test`.
 
 **Rate limit demo (burst → 429):**
 
