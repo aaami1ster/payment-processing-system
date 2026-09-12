@@ -11,3 +11,6 @@ databaseChangeLog:
   - include:
       file: changes/003-create-audit-outbox.yaml
       relativeToChangelogFile: true
+  - include:
+      file: changes/004-outbox-webhook-destination.yaml
+      relativeToChangelogFile: true

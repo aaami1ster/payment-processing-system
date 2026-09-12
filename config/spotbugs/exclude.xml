@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- High-severity SpotBugs only; suppress known false positives here if needed. -->
+<FindBugsFilter>
+    <!-- Lombok / generated boilerplate can trip EI_EXPOSE_REP on records/entities -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Or>
+            <Package name="~com\.example\.payment\.data\..*"/>
+            <Package name="~com\.example\.payment\.api\..*"/>
+            <Package name="~com\.example\.payment\.domain\..*"/>
+        </Or>
+    </Match>
+</FindBugsFilter>

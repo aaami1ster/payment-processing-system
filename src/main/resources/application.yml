@@ -26,6 +26,11 @@ spring:
     mongodb:
       # Do not create indexes during MongoTemplate construction — that would block startup if Mongo is down
       auto-index-creation: false
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 200ms
+      connect-timeout: 200ms
 
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
@@ -40,6 +45,47 @@ payment:
       circuit-failure-rate-threshold: 50
       circuit-sliding-window-size: 10
       circuit-wait-open-ms: 10000
+  rate-limit:
+    enabled: true
+    user:
+      capacity: 60
+      window-seconds: 60
+    merchant:
+      capacity: 300
+      window-seconds: 60
+    ip:
+      capacity: 120
+      window-seconds: 60
+  cache:
+    user:
+      # Optional query-side cache (Phase 8). Off by default — core stack needs no Redis.
+      enabled: ${PAYMENT_CACHE_USER_ENABLED:false}
+      ttl-seconds: 60
+      key-prefix: "user:"
+  webhooks:
+    # Optional signed HTTP notifications (Phase 10). Off by default — authorize path never waits on HTTP.
+    # Demo steps: README "Webhook demo (local Compose → host listener)".
+    enabled: ${PAYMENT_WEBHOOKS_ENABLED:false}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 3000
+    # Local demo subscriber (host listener on :9999). Override/clear for non-demo environments.
+    subscribers:
+      - id: local
+        merchant-id: "*"
+        target-url: http://host.docker.internal:9999/hooks
+        secret: change-me
+        active: true
+    # Production-style example:
+    # subscribers:
+    #   - id: ops-global
+    #     merchant-id: "*"
+    #     target-url: https://hooks.example.com/payments
+    #     secret: ${WEBHOOK_SECRET:change-me}
+    #     events:
+    #       - TRANSACTION_APPROVED
+    #       - TRANSACTION_FLAGGED
+    #       - TRANSACTION_DECLINED
+    #     active: true
 
 server:
   port: ${SERVER_PORT:8080}
@@ -61,6 +107,9 @@ management:
       enabled: true
     # Mongo is optional for readiness — payments stay available if audit projection lags
     mongo:
+      enabled: false
+    # Redis is optional (query cache only) — never block readiness
+    redis:
       enabled: false
     group:
       liveness:

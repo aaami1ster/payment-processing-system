@@ -14,7 +14,7 @@ CQRS-lite on a single PostgreSQL system of record:
 | ----- | ---- |
 | API | Controllers, `ApiResponse` envelope, Bean Validation, OpenAPI |
 | Commands | Writes: `FOR UPDATE`, idempotency, fraud, persist + outbox |
-| Queries | Read-only views (`GetUser`, `GetTransaction`, list users) |
+| Queries | Read-only views (`GetUser`, `GetTransaction`, list users/transactions) |
 | Domain | `User`, `Transaction`, `FraudEngine` + four `FraudRule`s |
 | Data | JPA/Liquibase (Postgres), Mongo audit docs, `OutboxPublisher` |
 
@@ -95,6 +95,7 @@ All responses use the `ApiResponse` envelope (`data`, `message`, `errors[]`, `me
 | Method | Path | Success | Notes |
 | ------ | ---- | ------- | ----- |
 | `POST` | `/api/v1/transactions` | `201` | Body: `amount`, `userId`, `merchantId`, `category` — status in `data` even when `DECLINED` |
+| `GET` | `/api/v1/transactions` | `200` | Cursor page (`userId` required; `limit`, `cursor`, optional `from`/`to`/`status`) |
 | `GET` | `/api/v1/transactions/{id}` | `200` | `404` `NOT_FOUND` |
 
 | Outcome | HTTP | Code |
@@ -104,6 +105,7 @@ All responses use the `ApiResponse` envelope (`data`, `message`, `errors[]`, `me
 | Same key, different payload | `409` | `IDEMPOTENCY_CONFLICT` |
 | Invalid body | `400` | `VALIDATION_ERROR` |
 | PostgreSQL failure | `503` | `SERVICE_UNAVAILABLE` |
+| Rate limit exceeded | `429` | `RATE_LIMIT_EXCEEDED` (+ optional `Retry-After`) |
 
 ### Fraud rules
 
@@ -151,6 +153,7 @@ Notable suites:
 | `TransactionApiTest`, `UserApiTest` | HTTP + Postgres Testcontainers |
 | `ConcurrencyIT` | Rule 2 race (2 existing + 2 parallel) + concurrent idempotency |
 | `OutboxPublisherIT` | Mongo projection, outage/recovery, duplicate `_id` |
+| `WebhookOutboxIT` | Signed webhook delivery, 5xx retry, subscriber down |
 
 Docker is required for Testcontainers. Security scanners (phase gate):
 
@@ -168,6 +171,28 @@ mvn verify
 open target/site/jacoco/index.html
 ```
 
+## Code quality (static analysis)
+
+CI-oriented quality gate alongside JaCoCo. **No Sonar container in app `docker-compose`** and no runtime dependency.
+
+| Path | Command | When |
+| ---- | ------- | ---- |
+| Local / CI gate | `mvn verify` | Tests + JaCoCo (≥ 75% line, ≥ 80% branch) + SpotBugs (High) + PMD + Checkstyle |
+| SonarQube (optional) | `mvn verify sonar:sonar` | Needs a Sonar server + `SONAR_HOST_URL` / token (CI secrets) |
+
+```bash
+# Always-on local gate (no Sonar server required):
+mvn verify
+# Reports: target/site/jacoco/, target/spotbugsXml.xml, target/pmd.xml, target/checkstyle-result.xml
+
+# Optional Sonar upload (after verify so JaCoCo XML exists):
+export SONAR_HOST_URL=https://sonar.example.com
+export SONAR_TOKEN=***   # never commit
+mvn -B sonar:sonar -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.token="$SONAR_TOKEN"
+```
+
+**Quality expectations:** JaCoCo line ≥ 75% (enforced); SpotBugs fails on High findings; PMD/Checkstyle use lean configs under `config/`. Sample GitHub Actions workflow: [`.github/workflows/static-analysis.yml`](.github/workflows/static-analysis.yml) (runs `mvn verify`; Sonar step only when secrets are present).
+
 ## Design Decisions
 
 Highlights from the [HLD](docs/high-level-design.md):
@@ -180,10 +205,135 @@ Highlights from the [HLD](docs/high-level-design.md):
 | Audit | Transactional outbox → async Mongo | Decision durable in PG; client never waits on Mongo |
 | Why Mongo at all? | Separate audit projection | Demonstrates heterogeneous-store resilience; PG remains SoR |
 | Idempotency | Optional key + SHA-256 fingerprint + partial unique index | Safe retries; `409` on fingerprint conflict |
+| Rate limiting | In-process Bucket4j filter on `/api/v1/**` (user / merchant / IP) | Caps abuse before handlers; does **not** replace Rule 2 |
+| Redis user cache | Optional `user:{id}` read-through on `GetUserHandler` only | Faster GETs; invalidate on PATCH; **never** on authorize `FOR UPDATE` |
+| Bulk export | Cursor-paginated `GET /transactions?userId=` | Stable `created_at DESC, id DESC` pages; max limit 200; query-only |
+| Webhooks | Outbox `WEBHOOK` + HMAC `X-Signature` | Async after commit; authorize never waits on subscriber HTTP |
+| Static analysis | Sonar-ready JaCoCo + SpotBugs/PMD/Checkstyle on `verify` | CI quality gate; no Sonar in app Compose |
 | Validation | Bean Validation on DTOs **and** handler guards | Contract at the edge; invariants for non-HTTP callers |
 | Logging | SLF4J via `LogFactory` + Logback JSON + MDC | Never `System.out`; correlate via `requestId` |
 
-**Authorize path:** load user with `FOR UPDATE` inside `ProcessTransactionHandler` — not via `GetUserHandler`.
+**Authorize path:** load user with `FOR UPDATE` inside `ProcessTransactionHandler` — not via `GetUserHandler` or Redis.
+
+**Optional Redis (Phase 8):**
+
+```bash
+# Core stack (no Redis):
+docker compose up --build -d
+
+# With query cache:
+# in .env: PAYMENT_CACHE_USER_ENABLED=true
+docker compose --profile redis up --build -d
+# Repeated GET /api/v1/users/{id} → logs `user.cache.hit`; PATCH evicts `user:{id}`
+# POST /transactions still uses SELECT … FOR UPDATE on PostgreSQL only
+```
+
+Config: `payment.cache.user.enabled` (default `false`), `ttl-seconds`, `spring.data.redis.*`. Redis down or disabled → GET users fall through to Postgres; readiness does not require Redis.
+
+**Optional bulk export (Phase 9):**
+
+```bash
+# After creating a user and a few payments:
+curl -s "http://localhost:8080/api/v1/transactions?userId=$USER_ID&limit=2"
+# Follow data.nextCursor until hasMore is false
+```
+
+`ListTransactionsHandler` is read-only (no locks/outbox). Filters: required `userId`; optional `from`/`to` (inclusive ISO-8601), `status`, `cursor`; `limit` default 50, max 200.
+
+**Optional webhooks (Phase 10):**
+
+Disabled by default (`PAYMENT_WEBHOOKS_ENABLED=false`). When enabled, each payment commit also enqueues a `WEBHOOK` outbox row; `OutboxPublisher` POSTs signed JSON asynchronously (`X-Signature: sha256=…`). Authorize never waits on the subscriber. Subscribers must treat delivery as **at-least-once** and dedupe on `transactionId` (+ `event`).
+
+### Webhook demo (local Compose → host listener)
+
+**1. Start a fake subscriber on the host** (bind `0.0.0.0`, port `9999`):
+
+```bash
+python3 - <<'PY'
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(n)
+        print("X-Signature:", self.headers.get("X-Signature"))
+        print("X-Request-Id:", self.headers.get("X-Request-Id"))
+        print(body.decode())
+        self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+    def log_message(self, *a): pass
+HTTPServer(("0.0.0.0", 9999), H).serve_forever()
+PY
+```
+
+Confirm it is listening: `lsof -nP -iTCP:9999 -sTCP:LISTEN`
+
+**2. Point the app at that listener** — sample subscriber in `application.yml`:
+
+```yaml
+payment:
+  webhooks:
+    enabled: true   # or PAYMENT_WEBHOOKS_ENABLED=true
+    subscribers:
+      - id: local
+        merchant-id: "*"
+        target-url: http://host.docker.internal:9999/hooks
+        secret: change-me
+        active: true
+```
+
+Use `host.docker.internal` (not `localhost`) so the **container** reaches the host. Compose maps that name via `extra_hosts: host.docker.internal:host-gateway`.
+
+**3. Bring the stack up with webhooks on:**
+
+```bash
+# .env
+PAYMENT_WEBHOOKS_ENABLED=true
+
+docker compose up --build -d
+# Optional reachability check from the app container:
+docker compose exec app wget -S -qO- --timeout=3 http://host.docker.internal:9999/hooks || echo FAIL
+```
+
+**4. Happy path — signed delivery without slowing authorize:**
+
+```bash
+USER_ID=$(curl -s -X POST http://localhost:8080/api/v1/users \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"wh-demo@example.com"}' | jq -r '.data.id')
+
+time curl -s -X POST http://localhost:8080/api/v1/transactions \
+  -H 'Content-Type: application/json' \
+  -d "{\"userId\":\"$USER_ID\",\"merchantId\":\"mch_demo\",\"amount\":100.00,\"category\":\"GROCERIES\"}"
+```
+
+Expect HTTP **201** in tens of ms; the Python terminal prints body + `X-Signature: sha256=…`; outbox rows go `PUBLISHED`:
+
+```bash
+docker compose exec postgres psql -U payments -d payments -c \
+  "SELECT destination, status, attempts FROM audit_outbox ORDER BY id DESC LIMIT 5;"
+```
+
+**5. Subscriber down — payment still 201, WEBHOOK retries:**
+
+Stop the Python process (Ctrl+C), POST another transaction (still **201**), then:
+
+```bash
+docker compose exec postgres psql -U payments -d payments -c \
+  "SELECT destination, status, attempts, left(last_error,80) AS err, next_attempt_at
+   FROM audit_outbox WHERE destination='WEBHOOK' ORDER BY id DESC LIMIT 3;"
+```
+
+Expect `AUDIT` **PUBLISHED**, `WEBHOOK` **PENDING** with rising `attempts`. Restart the listener (and optionally `UPDATE audit_outbox SET next_attempt_at = now() WHERE destination='WEBHOOK' AND status='PENDING';`) — delivery resumes and the row becomes **PUBLISHED**.
+
+Automated coverage: `mvn -Dtest=WebhookOutboxIT,WebhookClientTest test`.
+
+**Rate limit demo (burst → 429):**
+
+```bash
+docker compose up --build -d   # required after pulling Phase 7 — old images have no RateLimitFilter
+./scripts/demo-rate-limit.sh
+```
+
+Loops `POST /api/v1/transactions` for one `userId` until HTTP `429` + `RATE_LIMIT_EXCEEDED`, then confirms rejected calls do not insert `transactions` / `audit_outbox`. Defaults: `user` = 60/min (`payment.rate-limit.*` in `application.yml`; set `enabled: false` to disable).
 
 ## Domain UML
 

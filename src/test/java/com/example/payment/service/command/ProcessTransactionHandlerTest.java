@@ -9,10 +9,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.example.payment.common.exception.IdempotencyConflictException;
+import com.example.payment.common.exception.InvalidRequestException;
 import com.example.payment.common.exception.ServiceUnavailableException;
 import com.example.payment.common.exception.UserNotFoundException;
 import com.example.payment.common.util.RequestFingerprint;
 import com.example.payment.config.FraudProperties;
+import com.example.payment.config.WebhookProperties;
 import com.example.payment.data.postgres.entity.AuditOutboxEntity;
 import com.example.payment.data.postgres.entity.TransactionEntity;
 import com.example.payment.data.postgres.entity.UserEntity;
@@ -46,6 +48,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.json.JsonMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -91,7 +94,8 @@ class ProcessTransactionHandlerTest {
                 new TransactionMapper(),
                 JsonMapper.builder().build(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                paymentMetrics);
+                paymentMetrics,
+                new WebhookProperties());
     }
 
     @Test
@@ -195,6 +199,79 @@ class ProcessTransactionHandlerTest {
     void postgresFailureMapsToServiceUnavailable() {
         when(userRepository.findByIdForUpdate(USER_ID))
                 .thenThrow(new DataAccessResourceFailureException("pg down"));
+
+        assertThatThrownBy(() -> handler.handle(
+                        USER_ID, "mch_9f2", new BigDecimal("100.00"), Category.GROCERIES, null))
+                .isInstanceOf(ServiceUnavailableException.class);
+    }
+
+    @Test
+    void rejectsInvalidInputs() {
+        assertThatThrownBy(() -> handler.handle(
+                        null, "mch", BigDecimal.ONE, Category.GROCERIES, null))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> handler.handle(
+                        USER_ID, "  ", BigDecimal.ONE, Category.GROCERIES, null))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> handler.handle(
+                        USER_ID, "mch", null, Category.GROCERIES, null))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> handler.handle(
+                        USER_ID, "mch", BigDecimal.ZERO, Category.GROCERIES, null))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> handler.handle(
+                        USER_ID, "mch", BigDecimal.ONE, null, null))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void blankIdempotencyKeyTreatedAsAbsent() {
+        stubUserForUpdate(matureUser(true));
+        when(transactionRepository.countByUserIdAndStatusInAndCreatedAtBetween(
+                        eq(USER_ID), any(), any(), any()))
+                .thenReturn(0L);
+        when(transactionRepository.save(any(TransactionEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(outboxRepository.save(any(AuditOutboxEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Transaction result = handler.handle(
+                USER_ID, "mch_9f2", new BigDecimal("50.00"), Category.GROCERIES, "  ");
+
+        assertThat(result.getStatus()).isEqualTo(TransactionStatus.APPROVED);
+        verify(transactionRepository, never()).findByUserIdAndIdempotencyKey(any(), any());
+    }
+
+    @Test
+    void dataIntegrityViolationRecoversViaIdempotencyLookup() {
+        String key = "idem-race";
+        String fingerprint = RequestFingerprint.sha256(
+                USER_ID, "mch_9f2", new BigDecimal("100.00"), Category.GROCERIES);
+        TransactionEntity existing = existingEntity(key, fingerprint, TransactionStatus.APPROVED);
+
+        stubUserForUpdate(matureUser(true));
+        when(transactionRepository.findByUserIdAndIdempotencyKey(USER_ID, key))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existing));
+        when(transactionRepository.countByUserIdAndStatusInAndCreatedAtBetween(
+                        eq(USER_ID), any(), any(), any()))
+                .thenReturn(0L);
+        when(transactionRepository.save(any(TransactionEntity.class)))
+                .thenThrow(new DataIntegrityViolationException("unique"));
+
+        Transaction result = handler.handle(
+                USER_ID, "mch_9f2", new BigDecimal("100.00"), Category.GROCERIES, key);
+
+        assertThat(result.getId()).isEqualTo(existing.getId());
+    }
+
+    @Test
+    void dataIntegrityViolationWithoutWinnerIsServiceUnavailable() {
+        stubUserForUpdate(matureUser(true));
+        when(transactionRepository.countByUserIdAndStatusInAndCreatedAtBetween(
+                        eq(USER_ID), any(), any(), any()))
+                .thenReturn(0L);
+        when(transactionRepository.save(any(TransactionEntity.class)))
+                .thenThrow(new DataIntegrityViolationException("unique"));
 
         assertThatThrownBy(() -> handler.handle(
                         USER_ID, "mch_9f2", new BigDecimal("100.00"), Category.GROCERIES, null))
