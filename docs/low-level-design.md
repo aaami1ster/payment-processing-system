@@ -433,7 +433,43 @@ public record ApiMeta(
 
 **Factory helpers** (e.g. `ApiResponse.ok`, `ApiResponse.created`, `ApiResponse.failure`) keep controllers thin. `GlobalExceptionHandler` maps domain/API exceptions to the same envelope.
 
+### Request validation (layered)
+
+Use **both** layers with different responsibilities — do not duplicate the same check in both places.
+
+| Layer | Responsibility | Mechanism |
+| ----- | -------------- | --------- |
+| **API request DTOs** | Transport / contract: required fields, formats (`@Email`), ranges (`@DecimalMin`), sizes | Jakarta Bean Validation on `api.request.*` + `@Valid` on controllers |
+| **CQRS-lite handlers** | Business / use-case: uniqueness, not-found, invariants that protect every entry path | Explicit checks throwing domain/API exceptions (`DuplicateEmailException`, `InvalidRequestException`, `UserNotFoundException`) |
+
+Rules:
+
+1. Controllers stay thin: validate the HTTP body/path, then call one handler.
+2. Handlers must not assume “only the controller calls me” — keep business guards even when DTOs already validate shape.
+3. All validation failures that are client mistakes return **HTTP 400** with `errors[].code = VALIDATION_ERROR` (and `field` when known). Uniqueness stays **409**; missing resources stay **404**.
+4. Unknown API paths return **404** `NOT_FOUND` (not a bare static-resource 500). Unsupported method on an existing path returns **405** `METHOD_NOT_ALLOWED`.
+5. Future endpoints (transactions, etc.) follow the same pattern: annotate request DTOs; keep fraud/payment invariants in handlers/domain.
+
 **Business vs API errors:** fraud `DECLINED` / `FLAGGED` are **success** payloads inside `data.status`. They must **never** appear in `errors[]`. `errors[]` is only for request, authz, conflict, and infrastructure failures.
+
+Validation error example:
+
+```json
+{
+  "data": null,
+  "message": "Validation failed",
+  "errors": [
+    {
+      "code": "VALIDATION_ERROR",
+      "field": "amount",
+      "message": "must be greater than 0"
+    }
+  ],
+  "meta": {
+    "requestId": "req_abc123"
+  }
+}
+```
 
 ### Transactions
 
@@ -579,13 +615,20 @@ Transaction could not be safely evaluated/persisted
 | Method  | Path                 | HTTP success | Purpose                                         |
 | ------- | -------------------- | ------------ | ----------------------------------------------- |
 | `POST`  | `/api/v1/users`      | `201`        | Create user (sets `createdAt`)                  |
+| `GET`   | `/api/v1/users`      | `200`        | Cursor-paginated list (`items`, `nextCursor`, `hasMore`) |
 | `GET`   | `/api/v1/users/{id}` | `200`        | Query profile                                   |
 | `PATCH` | `/api/v1/users/{id}` | `200`        | Update KYC and/or `preApprovedTransactionLimit` |
 
 
 Create body: `{ "email", "kycStatus"? }`. Default KYC `PENDING`, `preApprovedTransactionLimit` null.
 
-All user endpoints use the same `ApiResponse` envelope (`data` = user resource on success).
+Create DTO validation: `@NotBlank` + `@Email` + `@Size(max=320)` on `email`.  
+Patch DTO validation: when `preApprovedTransactionLimit` is present, `@DecimalMin("0.0001")` + `@Digits`.  
+Handlers additionally enforce blank email / non-positive limit / missing id for non-HTTP callers.
+
+List query params: `cursor` (opaque `(createdAt, id)`), `limit` (default 50, max 200), optional `kycStatus`. Ordered by `created_at DESC, id DESC`. Same page shape as transaction export.
+
+All user endpoints use the same `ApiResponse` envelope (`data` = user resource on success, or a page object for list).
 
 ### Idempotency
 

@@ -26,14 +26,15 @@ Persistence unavailable → 503 — never fabricate a business decision
 6. **Every phase validation** must run the security vulnerability scan (see below) and fix High/Critical findings before marking the phase done.
 
 
-| Item             | Value                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| Base package     | `com.example.payment`                                                                             |
-| Main class       | `com.example.payment.PaymentProcessingApplication`                                                |
-| Stack            | Java 21+, Spring Boot **4.1.1** (prefer 3.x; see note), Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo |
-| Logging          | SLF4J + Logback via `LogFactory` only — never `System.out`                                        |
-| Manual API tests | Bruno collection in [`bruno/`](bruno/)                                                            |
-| Security scan    | [`check-security-docker-scout.sh`](../scripts/check-security-docker-scout.sh) + [`check-security-owasp.sh`](../scripts/check-security-owasp.sh) |
+| Item               | Value                                                                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base package       | `com.example.payment`                                                                                                                           |
+| Main class         | `com.example.payment.PaymentProcessingApplication`                                                                                              |
+| Stack              | Java 21+, Spring Boot **4.1.1** (prefer 3.x; see note), Maven, PostgreSQL, MongoDB, Liquibase, Testcontainers, JUnit 5, JaCoCo                  |
+| Logging            | SLF4J + Logback via `LogFactory` only — never `System.out`                                                                                      |
+| Manual API tests   | Bruno collection in `[bruno/](bruno/)`                                                                                                          |
+| Request validation | Bean Validation on API DTOs + business guards in CQRS handlers (see LLD)                                                                        |
+| Security scan      | `[check-security-docker-scout.sh](../scripts/check-security-docker-scout.sh)` + `[check-security-owasp.sh](../scripts/check-security-owasp.sh)` |
 
 
 **Progress legend:** `- [ ]` not done · `- [x]` done
@@ -52,7 +53,7 @@ Repo folder `[bruno/](bruno/)` is an **OpenCollection YAML** suite (Bruno ≥ 3)
 | Folder               | Phase gate | What it covers                                                      |
 | -------------------- | ---------- | ------------------------------------------------------------------- |
 | `bruno/health/`      | 0          | `/actuator/health`, liveness, readiness (+ prometheus when enabled) |
-| `bruno/user/`        | 1          | `POST/GET/PATCH /api/v1/users` + 404                                |
+| `bruno/user/`        | 1          | `POST/GET/PATCH /api/v1/users`, list, 404                           |
 | `bruno/transaction/` | 3–5 / 9    | Process, decline, get, idempotency, validation, list, audit-logs    |
 
 
@@ -68,9 +69,11 @@ npx @usebruno/cli run user --env Local
 npx @usebruno/cli run transaction --env Local
 ```
 
-Details: [`bruno/README.md`](bruno/README.md). Keep Bruno requests in sync when API contracts change (LLD wins).
+Details: `[bruno/README.md](bruno/README.md)`. Keep Bruno requests in sync when API contracts change (LLD wins).
 
 ---
+
+
 
 ## Security vulnerability scan (every phase validation)
 
@@ -83,11 +86,13 @@ Before marking **any** phase done, run both scanners (or the wrapper):
 ./scripts/check-security-vulnerabilities.sh
 ```
 
-| Script | Tool | Notes |
-| ------ | ---- | ----- |
-| `scripts/check-security-docker-scout.sh` | Docker Scout | App `pom`+`src` + app image (gate); vendor PG/Mongo warn-only unless `FAIL_ON_VENDOR=1` |
-| `scripts/check-security-owasp.sh` | OWASP Dependency-Check | Uses `NVD_API_KEY` from `.env`; report under `target/security/owasp/` |
-| `scripts/check-security-vulnerabilities.sh` | both | `SKIP_SCOUT=1` / `SKIP_OWASP=1` to run one |
+
+| Script                                      | Tool                   | Notes                                                                                   |
+| ------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
+| `scripts/check-security-docker-scout.sh`    | Docker Scout           | App `pom`+`src` + app image (gate); vendor PG/Mongo warn-only unless `FAIL_ON_VENDOR=1` |
+| `scripts/check-security-owasp.sh`           | OWASP Dependency-Check | Uses `NVD_API_KEY` from `.env`; report under `target/security/owasp/`                   |
+| `scripts/check-security-vulnerabilities.sh` | both                   | `SKIP_SCOUT=1` / `SKIP_OWASP=1` to run one                                              |
+
 
 ```bash
 SKIP_IMAGES=1 ./scripts/check-security-docker-scout.sh
@@ -97,7 +102,7 @@ IGNORE_BASE=0 ./scripts/check-security-docker-scout.sh       # include Temurin/A
 FAIL_CVSS=8 ./scripts/check-security-owasp.sh
 ```
 
-Put your NVD key in **`.env`** only (`NVD_API_KEY=…`) — never commit it. Template: `.env.example`.
+Put your NVD key in `.env` only (`NVD_API_KEY=…`) — never commit it. Template: `.env.example`.
 
 Complements (does not replace) Phase 11 SonarQube / static analysis.
 
@@ -200,7 +205,7 @@ cd bruno && npx @usebruno/cli run health --env Local
   **Description:** Keep `bruno/health/` docs/tests aligned with actuator paths (liveness/readiness semantics per LLD).  
   **Acceptance:** `bru run health --env Local` passes against a healthy compose stack.
 
-- [ ] **T0.7 — Security vulnerability scan script**  
+- [x] **T0.7 — Security vulnerability scan script**  
   **Description:** `check-security-docker-scout.sh` + `check-security-owasp.sh` (NVD key in `.env`); wired into every phase validation.  
   **Acceptance:** Both scripts documented; High/Critical CVEs fixed or gated.
 
@@ -264,14 +269,15 @@ Fix only Phase 0 gaps; do not start Phase 1.
 **Phase MVP / deliverables**
 
 - Domain `User`, `KycStatus`
-- Postgres entity/repository; `CreateUserHandler`, `GetUserHandler`, `UpdateUserHandler`
-- REST: `POST /api/v1/users`, `GET /api/v1/users/{id}`, `PATCH /api/v1/users/{id}`
+- Postgres entity/repository; `CreateUserHandler`, `GetUserHandler`, `UpdateUserHandler`, `ListUsersHandler`
+- REST: `POST /api/v1/users`, `GET /api/v1/users` (cursor list), `GET /api/v1/users/{id}`, `PATCH /api/v1/users/{id}`
 - Standard `ApiResponse` envelope + `GlobalExceptionHandler` (at least for users)
-- Unit/API tests for create/get/update + 404
+- Layered input validation: Bean Validation on request DTOs + business guards in handlers
+- Unit/API tests for create/get/update/list + 404
 
 **Documentation:** README API section for user endpoints (examples). Bruno `bruno/user/` docs stay in sync with the envelope.
 
-**Testing:** Handler unit tests; `@SpringBootTest` or MockMvc/Testcontainers for user API; **Bruno** `bruno/user/` (create / get / patch / 404).
+**Testing:** Handler unit tests; `@SpringBootTest` or MockMvc/Testcontainers for user API; **Bruno** `bruno/user/` (create / list / get / patch / 404).
 
 **Deployment:** Same compose stack; no new services.
 
@@ -290,25 +296,25 @@ cd bruno && npx @usebruno/cli run user --env Local
 
 ### Tasks
 
-- [ ] **T1.1 — User domain + persistence**  
+- [x] **T1.1 — User domain + persistence**  
   **Description:** `User`, `KycStatus`; JPA entity/repo matching Liquibase.  
   **Acceptance:** Can save/load user with email unique, KYC default PENDING, null limit.
 
-- [ ] **T1.2 — User command/query handlers**  
-  **Description:** Create / Get / Update (KYC + `preApprovedTransactionLimit`).  
-  **Acceptance:** Update is partial; unknown id → domain not-found; no fraud logic here.
+- [x] **T1.2 — User command/query handlers**  
+  **Description:** Create / Get / List (cursor) / Update (KYC + `preApprovedTransactionLimit`).  
+  **Acceptance:** Update is partial; unknown id → domain not-found; list returns `items`/`nextCursor`/`hasMore`; no fraud logic here.
 
-- [ ] **T1.3 — User REST + ApiResponse envelope**  
-  **Description:** Controllers return `ResponseEntity<ApiResponse<T>>`; errors use `errors[]` codes.  
-  **Acceptance:** 201 create, 200 get/patch, 404 `USER_NOT_FOUND`/`NOT_FOUND`; envelope matches LLD.
+- [x] **T1.3 — User REST + ApiResponse envelope**  
+  **Description:** Controllers return `ResponseEntity<ApiResponse<T>>`; errors use `errors[]` codes; `@Valid` on request DTOs.  
+  **Acceptance:** 201 create, 200 get/patch, 404 `USER_NOT_FOUND`/`NOT_FOUND`; envelope matches LLD; invalid body → 400 `VALIDATION_ERROR`.
 
-- [ ] **T1.4 — User tests + README examples**  
+- [x] **T1.4 — User tests + README examples**  
   **Description:** Tests for happy path + duplicate email + 404; README curl examples.  
   **Acceptance:** Tests green; README examples match running API.
 
-- [ ] **T1.5 — Bruno user collection**  
+- [x] **T1.5 — Bruno user collection**  
   **Description:** Ensure `bruno/user/` requests match live paths/body/error codes; create sets `userId` for later phases.  
-  **Acceptance:** `bru run user --env Local` green (create → get → patch → not-found).
+  **Acceptance:** `bru run user --env Local` green (create → list → get → patch → not-found).
 
 
 
@@ -329,9 +335,10 @@ Implement:
 2. Postgres mapping + repository.
 3. CreateUserHandler, GetUserHandler, UpdateUserHandler (PATCH KYC and/or preApprovedTransactionLimit).
 4. REST under /api/v1/users with ApiResponse / ApiError / ApiMeta and GlobalExceptionHandler.
-5. Default KYC PENDING; preApprovedTransactionLimit null on create.
-6. Tests + README curl examples for users.
-7. Align/verify Bruno `bruno/user/` (docs + tests) with the live API; create request must set env userId.
+5. Bean Validation on request DTOs (@Valid); business guards in handlers (duplicate email, etc.).
+6. Default KYC PENDING; preApprovedTransactionLimit null on create.
+7. Tests + README curl examples for users.
+8. Align/verify Bruno `bruno/user/` (docs + tests) with the live API; create request must set env userId.
 
 Do NOT implement transaction processing or fraud engine yet.
 Logging only via LogFactory.
@@ -348,10 +355,11 @@ Validate Phase 1 against plan.md and LLD user/API sections.
 Verify:
 1. POST/GET/PATCH /api/v1/users behave as designed with ApiResponse envelope.
 2. Duplicate email rejected; unknown user → 404 with stable error code.
-3. PATCH can raise preApprovedTransactionLimit (needed later for Rule 1).
-4. Tests pass; README examples work.
-5. Bruno user folder passes (create/get/patch/404).
-6. No transaction/fraud code required yet.
+3. Invalid create/patch bodies → 400 VALIDATION_ERROR with field when applicable.
+4. PATCH can raise preApprovedTransactionLimit (needed later for Rule 1).
+5. Tests pass; README examples work.
+6. Bruno user folder passes (create/get/patch/404).
+7. No transaction/fraud code required yet.
 
 Run Phase 1 exit demo. PASS/FAIL per T1.1–T1.5. Fix only Phase 1 gaps.
 
@@ -1109,6 +1117,7 @@ Hard rules:
 - Authorize path: SELECT user FOR UPDATE on primary; never Redis/GetUserHandler for that load.
 - Logging: LogFactory / SLF4J only — no System.out.
 - Prefer smallest change set; match existing packages and ApiResponse envelope.
+- Validate request DTOs with Bean Validation (`@Valid`); keep business invariants in CQRS handlers — do not duplicate the same check in both layers.
 - After implementation, run the phase exit demo and mark what was verified.
 ```
 
@@ -1134,8 +1143,8 @@ Hard rules:
 
 ## Progress tracker (roll-up)
 
-- [ ] Phase 0 — Bootstrap & runtime
-- [ ] Phase 1 — Users API
+- [x] Phase 0 — Bootstrap & runtime
+- [x] Phase 1 — Users API
 - [ ] Phase 2 — Fraud domain
 - [ ] Phase 3 — Process transaction MVP
 - [ ] Phase 4 — Mongo audit publisher

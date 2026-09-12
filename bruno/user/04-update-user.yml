@@ -1,7 +1,7 @@
 info:
   name: Update user
   type: http
-  seq: 3
+  seq: 4
 
 http:
   method: PATCH
@@ -60,7 +60,7 @@ docs: |-
   | HTTP | `errors[].code` |
   | ---- | --------------- |
   | `404` | `USER_NOT_FOUND` / `NOT_FOUND` |
-  | `400` | `VALIDATION_ERROR` |
+  | `400` | `VALIDATION_ERROR` (e.g. limit ≤ 0) |
 
   ## Why this matters
   A limit of `15000` allows a `12000` payment that would otherwise be DECLINED by Rule 1.

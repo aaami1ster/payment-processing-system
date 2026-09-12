@@ -18,10 +18,8 @@ runtime:
   scripts:
     - type: before-request
       code: |-
-        const existing = bru.getEnvVar("sampleEmail");
-        if (!existing || existing.indexOf("+") === -1) {
-          bru.setEnvVar("sampleEmail", "alice.bruno+" + Date.now() + "@example.com");
-        }
+        // Always unique so repeated `bru run user` does not hit EMAIL_ALREADY_EXISTS
+        bru.setEnvVar("sampleEmail", "alice.bruno+" + Date.now() + "@example.com");
     - type: after-response
       code: |-
         if (res.status === 201 && res.body && res.body.data) {
@@ -85,8 +83,8 @@ docs: |-
   ## Errors
   | HTTP | `errors[].code` | When |
   | ---- | --------------- | ---- |
-  | `400` | `VALIDATION_ERROR` | Bad/missing fields |
-  | `409` | (duplicate email) | Email already exists |
+  | `400` | `VALIDATION_ERROR` | Bad/missing fields (Bean Validation on DTO) |
+  | `409` | `EMAIL_ALREADY_EXISTS` | Email already exists |
 
   ## Side effects
   Sets env `userId` for later requests.

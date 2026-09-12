@@ -13,7 +13,7 @@ docs: |-
   | Folder | Endpoints |
   | ------ | --------- |
   | `health/` | Actuator health / liveness / readiness / prometheus |
-  | `user/` | `POST/GET/PATCH /api/v1/users` |
+  | `user/` | `POST/GET/PATCH /api/v1/users`, list, 404 |
   | `transaction/` | Process, get, list, idempotency cases, audit-logs |
 
   ## Response envelope
