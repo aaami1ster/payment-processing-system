@@ -18,7 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.MediaType;
@@ -33,8 +33,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -60,7 +60,7 @@ class OutboxPublisherIT {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add(
-                "spring.mongodb.uri",
+                "spring.data.mongodb.uri",
                 () -> mongo.getConnectionString()
                         + "/payments_audit?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000&socketTimeoutMS=2000");
         registry.add("payment.outbox.publisher.enabled", () -> "true");
@@ -151,7 +151,7 @@ class OutboxPublisherIT {
     }
 
     @Test
-    void duplicateMongoInsertIsTreatedAsSuccess() {
+    void duplicateMongoInsertIsTreatedAsSuccess() throws Exception {
         UUID transactionId = UUID.randomUUID();
         Instant now = Instant.parse("2026-09-10T16:01:02Z");
         String originalPayload =
@@ -217,7 +217,7 @@ class OutboxPublisherIT {
                 .readTree(created.getResponse().getContentAsString())
                 .get("data")
                 .get("transactionId")
-                .asString();
+                .asText();
     }
 
     private String createUser(String email) throws Exception {
@@ -227,7 +227,7 @@ class OutboxPublisherIT {
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode root = objectMapper.readTree(create.getResponse().getContentAsString());
-        return root.get("data").get("id").asString();
+        return root.get("data").get("id").asText();
     }
 
     private String outboxStatus(String transactionId) {

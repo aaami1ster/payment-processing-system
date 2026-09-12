@@ -19,11 +19,9 @@ spring:
         jdbc:
           time_zone: UTC
 
-  mongodb:
-    uri: ${SPRING_MONGODB_URI:${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/payments_audit?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000&socketTimeoutMS=2000}}
-
   data:
     mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:${SPRING_MONGODB_URI:mongodb://localhost:27017/payments_audit?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000&socketTimeoutMS=2000}}
       # Do not create indexes during MongoTemplate construction — that would block startup if Mongo is down
       auto-index-creation: false
     redis:

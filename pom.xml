@@ -7,10 +7,11 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <!-- Challenge prefers Boot 3.x. Last OSS 3.x (3.5.16) ships Spring Framework 6.2.19;
-             High/Critical CVEs (e.g. CVE-2026-47884, CVE-2026-59313) require 6.2.20+ which is
-             not published to Maven Central — only Spring Framework 7.0.9+ (Boot 4.1.x) is available. -->
-        <version>4.1.1</version>
+        <!-- Challenge-aligned Boot 3.x baseline (Framework 6.2.19). High/Critical Spring Framework
+             CVEs that need 6.2.20+ have no OSS artifact on Maven Central — mitigated here by
+             non-use + OWASP suppressions (see owasp-suppressions.xml). Prefer Boot 4.1.x on
+             develop/main when a cleaner OSS Framework upgrade is acceptable. -->
+        <version>3.5.16</version>
         <relativePath/>
     </parent>
 
@@ -22,13 +23,19 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- Boot 4.1.1 ships Tomcat 11.0.24; NVD needs >= 11.0.25 for recent CVEs -->
-        <tomcat.version>11.0.25</tomcat.version>
+        <!-- Boot 3 / Servlet 6: pin recent patched lines (NVD High/Critical) -->
+        <tomcat.version>10.1.59</tomcat.version>
+        <netty.version>4.1.138.Final</netty.version>
+        <jackson-bom.version>2.21.6</jackson-bom.version>
+        <postgresql.version>42.7.13</postgresql.version>
+        <log4j2.version>2.26.1</log4j2.version>
         <dependency-check.failBuildOnCVSS>7</dependency-check.failBuildOnCVSS>
         <dependency-check.version>13.0.0</dependency-check.version>
         <jacoco.version>0.8.14</jacoco.version>
         <jacoco.minimum.coverage>0.75</jacoco.minimum.coverage>
         <jacoco.minimum.branch.coverage>0.80</jacoco.minimum.branch.coverage>
+        <!-- 2.8.17 pulls swagger-ui 5.32.x (DOMPurify fix) -->
+        <springdoc.version>2.8.17</springdoc.version>
         <!-- Phase 11: static analysis (CI-only Sonar; local SpotBugs/PMD/Checkstyle on verify) -->
         <sonar.version>5.7.0.6970</sonar.version>
         <spotbugs.version>4.10.3.0</spotbugs.version>
@@ -76,23 +83,26 @@
             <artifactId>liquibase-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-liquibase</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- 8.1 stays on Jackson 2.x (Boot 3). logstash 9.0 pulls tools.jackson 3.0.1. -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
-            <version>9.0</version>
+            <version>8.1</version>
         </dependency>
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>3.1.1</version>
+            <version>${springdoc.version}</version>
+        </dependency>
+        <!-- springdoc 2.8.17 still manages swagger-ui 5.32.2 (DOMPurify 3.3.2 / CVE-2026-65898) -->
+        <dependency>
+            <groupId>org.webjars</groupId>
+            <artifactId>swagger-ui</artifactId>
+            <version>5.32.14</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -121,27 +131,22 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-testcontainers</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-postgresql</artifactId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-mongodb</artifactId>
+            <artifactId>mongodb</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

@@ -15,7 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import tools.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 class RateLimitFilterTest {
 
@@ -32,7 +33,7 @@ class RateLimitFilterTest {
         properties.getMerchant().setWindowSeconds(60);
         properties.getIp().setCapacity(100);
         properties.getIp().setWindowSeconds(60);
-        filter = new RateLimitFilter(properties, JsonMapper.builder().build());
+        filter = new RateLimitFilter(properties, new ObjectMapper().registerModule(new JavaTimeModule()));
     }
 
     @Test
