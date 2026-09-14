@@ -1,6 +1,8 @@
 package com.example.payment.config;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -18,17 +20,12 @@ public class RateLimitProperties {
 
     @Getter
     @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class Limit {
         /** Max requests in the window. */
         private int capacity = 60;
         /** Window length in seconds. */
         private int windowSeconds = 60;
-
-        public Limit() {}
-
-        public Limit(int capacity, int windowSeconds) {
-            this.capacity = capacity;
-            this.windowSeconds = windowSeconds;
-        }
     }
 }

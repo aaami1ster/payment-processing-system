@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-outbox-pending-partial-index
+      author: payment-processing-system
+      comment: >
+        Replace the full (status, next_attempt_at) index with a partial index on
+        due-work columns only. PUBLISHED rows no longer bloat the poller index;
+        (next_attempt_at, id) matches claim ORDER BY + LIMIT.
+      changes:
+        - dropIndex:
+            indexName: idx_audit_outbox_pending
+            tableName: audit_outbox
+        - sql:
+            sql: |
+              CREATE INDEX idx_audit_outbox_pending
+              ON audit_outbox (next_attempt_at, id)
+              WHERE status = 'PENDING';

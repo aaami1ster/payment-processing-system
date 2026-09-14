@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Clock;
@@ -22,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
@@ -40,6 +42,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * audit or signed webhook), and marks {@code PUBLISHED}. At-least-once delivery.
  */
 @Component
+@RequiredArgsConstructor
 @ConditionalOnProperty(
         prefix = "payment.outbox.publisher",
         name = "enabled",
@@ -59,27 +62,19 @@ public class OutboxPublisher {
     private final Clock clock;
     private final OutboxProperties properties;
     private final WebhookClient webhookClient;
-    private final TransactionTemplate transactionTemplate;
-    private final CircuitBreaker mongoCircuitBreaker;
-    private final Counter publishFailures;
-    private final Timer publishDuration;
+    private final PlatformTransactionManager transactionManager;
+    private final MeterRegistry meterRegistry;
+
+    private TransactionTemplate transactionTemplate;
+    private CircuitBreaker mongoCircuitBreaker;
+    private Counter publishFailures;
+    private Timer publishDuration;
     private final AtomicLong pendingCount = new AtomicLong(0);
     private final AtomicLong oldestPendingAgeSeconds = new AtomicLong(0);
     private final AtomicLong indexesEnsured = new AtomicLong(0);
 
-    public OutboxPublisher(
-            MongoTemplate mongoTemplate,
-            ObjectMapper objectMapper,
-            Clock clock,
-            OutboxProperties properties,
-            WebhookClient webhookClient,
-            PlatformTransactionManager transactionManager,
-            MeterRegistry meterRegistry) {
-        this.mongoTemplate = mongoTemplate;
-        this.objectMapper = objectMapper;
-        this.clock = clock;
-        this.properties = properties;
-        this.webhookClient = webhookClient;
+    @PostConstruct
+    void initPublisher() {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.mongoCircuitBreaker = CircuitBreaker.of(
                 "mongoAudit",
@@ -275,7 +270,7 @@ public class OutboxPublisher {
                         FROM audit_outbox
                         WHERE status = 'PENDING'
                           AND next_attempt_at <= :now
-                        ORDER BY id
+                        ORDER BY next_attempt_at, id
                         FOR UPDATE SKIP LOCKED
                         LIMIT :batchSize
                         """,

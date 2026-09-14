@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -36,6 +37,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
+@RequiredArgsConstructor
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private static final Logger log = LogFactory.getLogger(RateLimitFilter.class);
@@ -45,11 +47,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitProperties properties;
     private final ObjectMapper objectMapper;
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
-
-    public RateLimitFilter(RateLimitProperties properties, ObjectMapper objectMapper) {
-        this.properties = properties;
-        this.objectMapper = objectMapper;
-    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
