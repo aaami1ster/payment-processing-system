@@ -11,12 +11,14 @@ import java.time.Duration;
 import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 
 /**
  * POSTs signed webhook payloads. Callers (outbox publisher) own retry/backoff — this client never
  * runs on the authorize request path.
  */
+@RequiredArgsConstructor
 public class WebhookClient {
 
     private static final Logger log = LogFactory.getLogger(WebhookClient.class);
@@ -24,12 +26,7 @@ public class WebhookClient {
     private static final String HMAC_ALG = "HmacSHA256";
 
     private final HttpClient httpClient;
-    private final Duration readTimeout;
-
-    public WebhookClient(HttpClient httpClient, WebhookProperties properties) {
-        this.httpClient = httpClient;
-        this.readTimeout = Duration.ofMillis(properties.getReadTimeoutMs());
-    }
+    private final WebhookProperties properties;
 
     /**
      * Deliver raw JSON body with HMAC signature.
@@ -40,7 +37,7 @@ public class WebhookClient {
     public int deliver(String targetUrl, String secret, String rawBody, String requestId) {
         String signature = sign(secret, rawBody);
         HttpRequest request = HttpRequest.newBuilder(URI.create(targetUrl))
-                .timeout(readTimeout)
+                .timeout(Duration.ofMillis(properties.getReadTimeoutMs()))
                 .header("Content-Type", "application/json")
                 .header("X-Request-Id", requestId)
                 .header("X-Signature", "sha256=" + signature)

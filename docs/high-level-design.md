@@ -558,7 +558,7 @@ SELECT *
 FROM audit_outbox
 WHERE status = 'PENDING'
   AND next_attempt_at <= now()
-ORDER BY id
+ORDER BY next_attempt_at, id
 FOR UPDATE SKIP LOCKED
 LIMIT :batchSize;
 ```

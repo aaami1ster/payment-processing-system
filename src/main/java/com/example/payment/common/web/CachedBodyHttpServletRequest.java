@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import lombok.Getter;
 import org.springframework.util.StreamUtils;
 
 /**
@@ -17,6 +18,7 @@ import org.springframework.util.StreamUtils;
  */
 public final class CachedBodyHttpServletRequest extends HttpServletRequestWrapper {
 
+    @Getter
     private final byte[] cachedBody;
     private final Charset charset;
 
@@ -27,10 +29,6 @@ public final class CachedBodyHttpServletRequest extends HttpServletRequestWrappe
                 ? StandardCharsets.UTF_8
                 : Charset.forName(encoding);
         this.cachedBody = StreamUtils.copyToByteArray(request.getInputStream());
-    }
-
-    public byte[] getCachedBody() {
-        return cachedBody;
     }
 
     @Override

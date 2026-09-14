@@ -6,6 +6,18 @@ When cutting a release, flatten these sections into [`CHANGELOG.md`](CHANGELOG.m
 
 ## [Unreleased]
 
+### MR: `refactor: optimize outbox claim and simplify config`
+
+#### Added
+
+- Add a Liquibase partial index on pending outbox rows (`next_attempt_at`, `id`) so published rows no longer bloat the poller
+
+#### Changed
+
+- Claim due outbox work with `ORDER BY next_attempt_at, id` so retries stay fair and match the index
+- Align HLD/LLD outbox poll SQL and index docs with the new claim path
+- Replace hand-written constructors and accessors with Lombok on outbox, rate-limit, and webhook helpers
+
 ### MR: `build: retarget boot 3.5 with virtual owasp patches`
 
 #### Changed

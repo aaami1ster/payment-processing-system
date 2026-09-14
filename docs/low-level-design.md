@@ -331,7 +331,8 @@ The simpler `(user_id, created_at)` index is sufficient at challenge scale. The 
 
 ```sql
 CREATE INDEX idx_audit_outbox_pending
-ON audit_outbox(status, next_attempt_at);
+ON audit_outbox (next_attempt_at, id)
+WHERE status = 'PENDING';
 ```
 
 No terminal `FAILED` state that silently stops delivery. Events are retained; backoff grows; metrics and alerts fire. If a dead-letter path is added later, the original payload remains durable and recoverable.
